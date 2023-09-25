@@ -11,6 +11,7 @@
 
 
 #include <ctype.h>
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 #include "lua.h"
 
 #include "lauxlib.h"
+#include "lglmaux.h"
 #include "lualib.h"
 
 
@@ -143,7 +145,7 @@ static int luaB_getmetatable (lua_State *L) {
 
 
 static int luaB_setmetatable (lua_State *L) {
-  int t = lua_type(L, 2);
+  int t = lua_rawtype(L, 2);
   luaL_checktype(L, 1, LUA_TTABLE);
   luaL_argexpected(L, t == LUA_TNIL || t == LUA_TTABLE, 2, "nil or table");
   luaB_readonly_argcheck(L, 1);
@@ -163,25 +165,31 @@ static int luaB_rawequal (lua_State *L) {
 }
 
 
+#define luaB_haslen(t) ((t) == LUA_TTABLE || (t) == LUA_TSTRING || (t) == LUA_TVECTOR || (t) == LUA_TMATRIX)
 static int luaB_rawlen (lua_State *L) {
-  int t = lua_type(L, 1);
-  luaL_argexpected(L, t == LUA_TTABLE || t == LUA_TSTRING, 1,
-                      "table or string");
+  int t = lua_rawtype(L, 1);
+  luaL_argexpected(L, luaB_haslen(t), 1, "table or string");
   lua_pushinteger(L, lua_rawlen(L, 1));
   return 1;
 }
 
 
+#define luaB_hasget(t) ((t) == LUA_TTABLE || (t) == LUA_TVECTOR || (t) == LUA_TMATRIX)
 static int luaB_rawget (lua_State *L) {
-  luaL_checktype(L, 1, LUA_TTABLE);
+  int t = lua_rawtype(L, 1);
+  if (!luaB_hasget(t))
+    return luaL_typeerror(L, 1, lua_typename(L, LUA_TTABLE));
   luaL_checkany(L, 2);
   lua_settop(L, 2);
   lua_rawget(L, 1);
   return 1;
 }
 
+#define luaB_hasset(t) ((t) == LUA_TTABLE || (t) == LUA_TMATRIX)
 static int luaB_rawset (lua_State *L) {
-  luaL_checktype(L, 1, LUA_TTABLE);
+  int t = lua_rawtype(L, 1);
+  if (!luaB_hasset(t))
+    luaL_typeerror(L, 1, lua_typename(L, LUA_TTABLE));
   luaL_checkany(L, 2);
   luaL_checkany(L, 3);
   luaB_readonly_argcheck(L, 1);
@@ -271,20 +279,27 @@ static int luaB_collectgarbage (lua_State *L) {
 }
 
 
+#define luaB_glmtype(t) ((t) == LUA_TVECTOR || (t) == LUA_TMATRIX)
 static int luaB_type (lua_State *L) {
-  int t = lua_type(L, 1);
+  int t = lua_rawtype(L, 1);
   luaL_argcheck(L, t != LUA_TNONE, 1, "value expected");
-  lua_pushstring(L, lua_typename(L, t));
+  if (luaB_glmtype(t))
+    lua_pushstring(L, luaglm_typename(L, 1));
+  else
+    lua_pushstring(L, lua_typename(L, t));
   return 1;
 }
 
 
+#define luaB_hasnext(t) ((t) == LUA_TTABLE || (t) == LUA_TVECTOR || (t) == LUA_TMATRIX)
 #if defined(LUA_EXT_ITERATION)
 LUA_API int luaB_next (lua_State *L) {
 #else
 static int luaB_next (lua_State *L) {
 #endif
-  luaL_checktype(L, 1, LUA_TTABLE);
+  int t = lua_rawtype(L, 1);
+  if (!luaB_hasnext(t))
+    return luaL_typeerror(L, 1, lua_typename(L, LUA_TTABLE));
   lua_settop(L, 2);  /* create a 2nd argument if there isn't one */
   if (lua_next(L, 1))
     return 2;
@@ -544,6 +559,18 @@ static int luaB_defer (lua_State *L) {  /* func2close */
 #endif
 
 
+#if defined(LUA_EXT_JOAAT)
+static int luaB_joaat (lua_State *L) {
+  const int type = lua_type(L, 1);
+  if (type == LUA_TNUMBER || type == LUA_TBOOLEAN || type == LUA_TSTRING) {
+    lua_pushinteger(L, (lua_Integer)luaglm_tohash(L, 1, lua_toboolean(L, 2)));
+    return 1;
+  }
+  return luaL_typeerror(L, 1, lua_typename(L, LUA_TSTRING));
+}
+#endif
+
+
 static const luaL_Reg base_funcs[] = {
   {"assert", luaB_assert},
   {"collectgarbage", luaB_collectgarbage},
@@ -575,9 +602,155 @@ static const luaL_Reg base_funcs[] = {
 #if defined(LUA_EXT_DEFER_API)
   {"defer", luaB_defer},
 #endif
+#if defined(LUA_EXT_JOAAT)
+  {"joaat", luaB_joaat},
+#endif
   /* placeholders */
   {LUA_GNAME, NULL},
   {"_VERSION", NULL},
+  /* GLSL Functions */
+  {"vec", luaglm_vec},
+  {"vec2", luaglm_vec2},
+  {"vec3", luaglm_vec3},
+  {"vec4", luaglm_vec4},
+  {"mat2", luaglm_mat2x2}, {"mat2x2", luaglm_mat2x2},
+  {"mat3", luaglm_mat3x3}, {"mat3x3", luaglm_mat3x3},
+  {"mat4", luaglm_mat4x4}, {"mat4x4", luaglm_mat4x4},
+  {"quat", luaglm_quat},
+  /* 8.1. Angle and Trigonometry Functions */
+  {"radians", luaglm_rad},
+  {"degrees", luaglm_deg},
+  {"sin", luaglm_sin},
+  {"cos", luaglm_cos},
+  {"tan", luaglm_tan},
+  {"asin", luaglm_asin},
+  {"acos", luaglm_acos},
+  {"atan", luaglm_atan},
+  {"sinh", luaglm_sinh},
+  {"cosh", luaglm_cosh},
+  {"tanh", luaglm_tanh},
+  {"asinh", luaglm_asinh},
+  {"acosh", luaglm_acosh},
+  {"atanh", luaglm_atanh},
+  /* 8.2. Exponential Functions */
+  {"pow", luaglm_pow},
+  {"exp", luaglm_exp},
+  {"log", luaglm_log},
+  {"exp2", luaglm_exp2},
+  {"log2", luaglm_log2},
+  {"sqrt", luaglm_sqrt},
+  {"inversesqrt", luaglm_invsqrt},
+  /* 8.3. Common Functions */
+  {"abs", luaglm_abs},
+  {"sign", luaglm_sign},
+  {"floor", luaglm_floor},
+  {"trunc", luaglm_trunc},
+  {"round", luaglm_round},
+  {"roundEven", luaglm_round},
+  {"ceil", luaglm_ceil},
+  {"fract", luaglm_fract},
+  {"mod", luaglm_mod},
+  {"modf", luaglm_modf},
+  {"min", luaglm_min},
+  {"max", luaglm_max},
+  {"clamp", luaglm_clamp},
+  {"mix", luaglm_mix},
+  {"step", luaglm_step},
+  {"smoothstep", luaglm_smoothstep},
+  {"isnan", luaglm_isnan},
+  {"isinf", luaglm_isinf},
+  {"fma", luaglm_fma},
+  {"frexp", luaglm_frexp},
+  {"ldexp", luaglm_ldexp},
+#if LUAI_IS32INT
+  /*{"floatBitsToInt", luaglm_floatBitsToInt},*/
+  /*{"intBitsToFloat", luaglm_intBitsToFloat},*/
+  /*{"floatBitsToUint", luaglm_floatBitsToUint},*/
+  /*{"uintBitsToFloat", luaglm_uintBitsToFloat},*/
+#endif
+  /* 8.4. Floating-Point Pack and Unpack Functions */
+  /*{"packUnorm2x16", luaglm_packUnorm2x16},*/
+  /*{"packSnorm2x16", luaglm_packSnorm2x16},*/
+  /*{"packUnorm4x8", luaglm_packUnorm4x8},*/
+  /*{"packSnorm4x8", luaglm_packSnorm4x8},*/
+  /*{"unpackUnorm2x16", luaglm_unpackUnorm2x16},*/
+  /*{"unpackSnorm2x16", luaglm_unpackSnorm2x16},*/
+  /*{"unpackUnorm4x8", luaglm_unpackUnorm4x8},*/
+  /*{"unpackSnorm4x8", luaglm_unpackSnorm4x8},*/
+  /*{"packHalf2x16", luaglm_packHalf2x16},*/
+  /*{"unpackHalf2x16", luaglm_unpackHalf2x16},*/
+  /*{"packDouble2x32", luaglm_packDouble2x32},*/
+  /*{"unpackDouble2x32", luaglm_unpackDouble2x32},*/
+  /* 8.5. Geometric Functions */
+  {"length", luaglm_length},
+  {"distance", luaglm_distance},
+  {"dot", luaglm_dot},
+  {"cross", luaglm_cross},
+  {"normalize", luaglm_normalize},
+  {"faceforward", luaglm_faceforward},
+  {"reflect", luaglm_reflect},
+  {"refract", luaglm_refract},
+  /* 8.6 Matrix Functions */
+  {"matrixCompMult", luaglm_matrixcompmult},
+  {"outerProduct", luaglm_outerproduct},
+  {"transpose", luaglm_transpose},
+  {"determinant", luaglm_det},
+  {"inverse", luaglm_inverse},
+  /* 8.7. Vector Relational Functions */
+  {"lessThan", luaglm_lessThan},
+  {"lessThanEqual", luaglm_lessThanEqual},
+  {"greaterThan", luaglm_greaterThan},
+  {"greaterThanEqual", luaglm_greaterThanEqual},
+  {"equal", luaglm_equal},
+  {"notEqual", luaglm_notEqual},
+  {"any", luaglm_any},
+  {"all", luaglm_all},
+  {"not_", luaglm_not},
+  /* 8.8. Integer Functions */
+  /*{"uaddCarry", luaglm_uaddCarry},*/
+  /*{"usubBorrow", luaglm_usubBorrow},*/
+  /*{"umulExtended", luaglm_umulExtended},*/
+  /*{"imulExtended", luaglm_imulExtended},*/
+  {"bitfieldExtract", luaglm_bitfieldExtract},
+  {"bitfieldInsert", luaglm_bitfieldInsert},
+  {"bitfieldReverse", luaglm_bitfieldReverse},
+  {"bitCount", luaglm_bitCount},
+  {"findLSB", luaglm_findLSB},
+  {"findMSB", luaglm_findMSB},
+  /* 8.9. Texture Functions */
+  /* 8.10. Atomic-Counter Functions */
+  /* 8.11. Image Functions */
+  /* 8.12. Fragment Processing Functions */
+  /* 8.13. Geometry Shader Functions */
+  /* 8.14. Fragment Processing Functions */
+  /* 8.15. Noise Functions */
+  /* 8.X. Extensions */
+  {"approx", luaglm_approx},
+  {"angle", luaglm_angle},
+  {"axis", luaglm_quat_axis},
+  {"quat_for", luaglm_quat_for},
+  {"slerp", luaglm_slerp},
+  /*{"squad", luaglm_squad},*/
+  {"translate", luaglm_translate},
+  {"scale", luaglm_scale},
+  {"rotate", luaglm_rotate},
+  {"frustum", luaglm_frustum},
+  {"ortho", luaglm_ortho},
+  {"perspective", luaglm_perspective},
+  {"project", luaglm_project},
+  {"unproject", luaglm_unproject},
+  {"lookat", luaglm_lookat},
+  {"billboard", luaglm_billboard},
+  {"compose", luaglm_compose},
+  {"decompose", luaglm_decompose},
+  {"from_euler", luaglm_from_euler},
+  {"to_euler", luaglm_to_euler},
+  /* 8.Z. Constants */
+  {"epsilon", NULL},
+  /* Compatibility Functions */
+  {"lerp", luaglm_mix},
+  {"inv", luaglm_inverse},
+  {"norm", luaglm_normalize},
   {NULL, NULL}
 };
 
@@ -589,6 +762,15 @@ LUAMOD_API int luaopen_base (lua_State *L) {
   /* set global _G */
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, LUA_GNAME);
+  /* 8.Z. Constants */
+  lua_pushnumber(L, (lua_Number)
+#if defined(LUAGLM_HALF_TYPE)
+    0.0009765625 /* 2^-10 */
+#else
+    FLT_EPSILON
+#endif
+  );
+  lua_setfield(L, -2, "epsilon");
   /* set global _VERSION */
   lua_pushliteral(L, LUA_VERSION);
   lua_setfield(L, -2, "_VERSION");

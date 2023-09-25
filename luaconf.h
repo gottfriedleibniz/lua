@@ -936,6 +936,17 @@
 ** =====================================================================
 */
 
+/*
+** Ensure Lua 5.4 C-API compatibility.
+** @TypeCompat: Map LUA_T{VECTOR,MATRIX} to LUA_TTABLE in lapi/lauxlib
+*/
+#define LUAGLM_COMPAT_5_4
+
+/* Use half precision floating-point as the vector storage type */
+#if !defined(LUAGLM_HALF_TYPE)
+/* #define LUAGLM_HALF_TYPE */
+#endif
+
 /* Parser */
 
 /* Add compound operators (+=, -=, *=, /=, <<=, >>=, &=, |=, ^=, ..=) to the
@@ -947,6 +958,9 @@
 
 /* Enable if-expressions */
 #define LUA_EXT_IFEXPR
+
+/* Enable compile time Jenkins' one-at-a-time hashing */
+#define LUA_EXT_JOAAT
 
 /* Enable short function notation */
 #define LUA_EXT_LAMBDA
@@ -986,6 +1000,10 @@
 /* Import func2close from ltests.h into the base library as 'defer' */
 /* #define LUA_EXT_DEFER_API */
 
+/* Support half precision floating-points in string.{pack,unpack} using 'e' as
+** the format specifier */
+#define LUA_EXT_HALF
+
 /* Enable internal integer formatting (temporary extension) */
 #define LUA_EXT_ITOA
 
@@ -999,6 +1017,41 @@
 
 /* support readline/history.h */
 #define LUA_EXT_READLINE_HISTORY
+
+/* }================================================================== */
+
+/*
+** {==================================================================
+** Vector and Matrix Definitions
+** ===================================================================
+*/
+
+/*
+** Half-precision floating point configuration.
+*/
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) \
+  || defined(_MSC_VER)
+#include <stdint.h>
+typedef uint16_t l_float16;
+#else
+typedef unsigned short l_float16;
+#endif
+
+/* Vector and Quaternion extension */
+typedef float lua_vec2[2];
+typedef float lua_vec3[3];
+typedef float lua_vec4[4];
+typedef float lua_versor[4];
+
+typedef l_float16 lua_hvec2[2];
+typedef l_float16 lua_hvec3[3];
+typedef l_float16 lua_hvec4[4];
+typedef l_float16 lua_hversor[4];
+
+/* Matrix extension */
+typedef lua_vec2 lua_mat2[4];
+typedef lua_vec3 lua_mat3[4];
+typedef lua_vec4 lua_mat4[4];
 
 /* }================================================================== */
 

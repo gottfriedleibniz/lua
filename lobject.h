@@ -66,12 +66,34 @@ typedef lu_byte lu_tag;
 /* add variant bits to a type */
 #define makevariant(t,v)	((t) | ((v) << VARIANT_OFFSET))
 
+/* Internal vector representation */
+typedef union lua_Float4 {
+  lua_vec4 v4;
+  lua_vec3 v3;
+  lua_vec2 v2;
+  lua_versor q;
+} lua_Float4;
+
+#if defined(LUAGLM_HALF_TYPE)
+typedef l_float16 luai_vecf;
+typedef union lua_hvec {
+  lua_hvec4 v4;
+  lua_hvec3 v3;
+  lua_hvec2 v2;
+  lua_hversor q;
+} luai_Float4;
+#else
+typedef float luai_vecf;
+typedef lua_Float4 luai_Float4;
+#endif
+
 /*
 ** Union of all Lua values
 */
 typedef union Value {
   struct GCObject *gc;    /* collectable objects */
   void *p;         /* light userdata */
+  luai_Float4 f4;  /* vector and quaternion stub */
   lua_CFunction f; /* light C functions */
   lua_Integer i;   /* integer numbers */
   lua_Number n;    /* float numbers */
@@ -139,11 +161,15 @@ typedef struct TValue {
 /* set a value's tag */
 #define settt_(o,t)	((o)->tt_=(t))
 
+/* @LuaGLM: 'union Value' assignment operators */
+#define setval(io1, io2) (io1)->value_ = (io2)->value_
+#define setkeyval(n, io) (n).key_val = (io)->value_
+#define getkeyval(io, n) (io)->value_ = (n).key_val
 
 /* main macro to copy values (from 'obj2' to 'obj1') */
 #define setobj(L,obj1,obj2) \
 	{ TValue *io1=(obj1); const TValue *io2=(obj2); \
-          io1->value_ = io2->value_; settt_(io1, io2->tt_); \
+          setval(io1, io2); settt_(io1, io2->tt_); \
 	  checkliveness(L,io1); lua_assert(!isnonstrictnil(io1)); }
 
 /*
@@ -745,14 +771,14 @@ typedef union Node {
 /* copy a value into a key */
 #define setnodekey(L,node,obj) \
 	{ Node *n_=(node); const TValue *io_=(obj); \
-	  n_->u.key_val = io_->value_; n_->u.key_tt = io_->tt_; \
+	  setkeyval(n_->u, io_); n_->u.key_tt = io_->tt_; \
 	  checkliveness(L,io_); }
 
 
 /* copy a value from a key */
 #define getnodekey(L,obj,node) \
 	{ TValue *io_=(obj); const Node *n_=(node); \
-	  io_->value_ = n_->u.key_val; io_->tt_ = n_->u.key_tt; \
+	  getkeyval(io_, n_->u); io_->tt_ = n_->u.key_tt; \
 	  checkliveness(L,io_); }
 
 
@@ -842,6 +868,122 @@ typedef struct Table {
 
 /* }================================================================== */
 
+/*
+** {==================================================================
+** Vector Object API
+** @ImplicitVec: single component vectors are represented by LUA_TNUMBER
+** ===================================================================
+*/
+
+#define LUA_VVECTOR2 makevariant(LUA_TVECTOR, 0)
+#define LUA_VVECTOR3 makevariant(LUA_TVECTOR, 1)
+#define LUA_VVECTOR4 makevariant(LUA_TVECTOR, 2)
+#define LUA_VQUAT makevariant(LUA_TVECTOR, 3)
+
+#define ttisvector(o) checktype((o), LUA_TVECTOR)
+#define ttisvector2(o) checktag((o), LUA_VVECTOR2)
+#define ttisvector3(o) checktag((o), LUA_VVECTOR3)
+#define ttisvector4(o) checktag((o), LUA_VVECTOR4)
+#define ttisquat(o) checktag((o), LUA_VQUAT)
+
+#define vvaltt(o) rawtt(o)
+#define vvalueraw(o) ((o).f4)
+#define vvalue_(o) vvalueraw(val_((o)))
+#define vvalue(o) check_exp(ttisvector(o), vvalue_(o))
+#define setvvalue(obj, x, o) \
+  LUA_MLM_BEGIN              \
+  TValue *io = (obj);        \
+  val_(io).f4 = (x);         \
+  settt_(io, (o));           \
+  LUA_MLM_END
+
+/* Conversion between internal/external storage types */
+#if defined(LUAGLM_HALF_TYPE)
+  #define vloadf(F) lua_fromhalf((F))
+  #define vstoref(F) lua_tohalf((F))
+  #define vload(F) luaO_loadv(&(F))
+  #define vstore(F) luaO_storev(&(F))
+  LUAI_FUNC lua_Float4 (luaO_loadv)(const luai_Float4 *input);
+  LUAI_FUNC luai_Float4 (luaO_storev)(const lua_Float4 *input);
+#else
+  #define vloadf(F) (F)
+  #define vstoref(F) (F)
+  #define vload(F) (F)
+  #define vstore(F) (F)
+#endif
+
+/* get/set wrappers for accessing luai_Float4 by index */
+#define vgeti(v, i) vloadf((v).v4[i])
+#define vseti(v, i, f) ((v).v4[i] = vstoref(f))
+
+/* Compute the vector tag associated with component size L. Does not sanitize
+** and assumes equals 2, 3, or 4 */
+#define vvaltag(L) cast(lu_tag, makevariant(LUA_TVECTOR, ((L) - 2) /* & 0x3 */))
+
+/* Compute the vector length associated with vector tag V. Does not sanitize
+** and assumes a valid tag */
+#define vvallen(V) (((V) == LUA_VQUAT) ? 4 : (2 + (((V) & BITS_VARIANT) >> VARIANT_OFFSET)))
+#define ttvlen(o) vvallen(vvaltt(o))
+
+/* Compare raw types (used to verify mat+mat or vec+vec operations) */
+#define tteq(o1, o2) (rawtt(o1) == rawtt(o2))
+
+/* Compare variant bits (used to verify dimensions to vec+mat operations) */
+#define ttvareq(o1, o2) ((rawtt(o1) & BITS_VARIANT) == (rawtt(o2) & BITS_VARIANT))
+
+/* Table for accessing (and swizzling) vectors. */
+LUAI_DDEC(const lu_byte luaO_vecindex[UCHAR_MAX + 1]);
+
+/* }================================================================== */
+
+/*
+** {==================================================================
+** Matrix Object API
+** ===================================================================
+*/
+
+typedef union lua_Matrix {
+  lua_mat4 m4;  /* X-by-4 matrix */
+  lua_mat3 m3;  /* X-by-3 matrix */
+  lua_mat2 m2;  /* X-by-2 matrix */
+} lua_Matrix;
+
+typedef struct GCMatrix {
+  CommonHeader;
+  lua_Matrix m;
+} GCMatrix;
+
+#define LUA_VMATRIX2 makevariant(LUA_TMATRIX, 0)
+#define LUA_VMATRIX3 makevariant(LUA_TMATRIX, 1)
+#define LUA_VMATRIX4 makevariant(LUA_TMATRIX, 2)
+
+#define ttismatrix(o) checktype((o), LUA_TMATRIX)
+#define ttismatrix2(o) checktag((o), ctb(LUA_VMATRIX2))
+#define ttismatrix3(o) checktag((o), ctb(LUA_VMATRIX3))
+#define ttismatrix4(o) checktag((o), ctb(LUA_VMATRIX4))
+#define ttisglm(o) (ttisvector(o) || ttismatrix(o))
+
+#define mvaltt(o) ttypetag(o)
+#define mvalue_(o) gco2mat(val_(o).gc)->m
+
+#define mvalue(o) check_exp(ttismatrix(o), mvalue_(o))
+#define m2value(o) check_exp(ttismatrix2(o), mvalue_(o).m2)
+#define m3value(o) check_exp(ttismatrix3(o), mvalue_(o).m3)
+#define m4value(o) check_exp(ttismatrix4(o), mvalue_(o).m4)
+#define setmvalue(L, o, x, t) \
+  LUA_MLM_BEGIN               \
+  TValue *io = (o);           \
+  GCMatrix *x_ = (x);         \
+  val_(io).gc = obj2gco(x_);  \
+  settt_(io, ctb(t));         \
+  checkliveness(L, io);       \
+  LUA_MLM_END
+
+#define mvaltag(L) cast(lu_tag, makevariant(LUA_TMATRIX, ((L) - 2) /* & 0x3 */))
+#define mvallen(V) (2 + (((V) & BITS_VARIANT) >> VARIANT_OFFSET))
+#define ttmlen(o) mvallen(mvaltt(o))
+
+/* }================================================================== */
 
 /*
 ** 'module' operation for hashing (size is always a power of 2)
@@ -879,6 +1021,10 @@ LUAI_FUNC void luaO_chunkid (char *out, const char *source, size_t srclen);
 
 /* @LuaExt: avoid luaO_pushvfstring */
 LUAI_FUNC int luaO_tostringbuff (const TValue *obj, char *buff);
+
+#if defined(LUA_EXT_JOAAT)
+LUAI_FUNC lua_Unsigned luaO_jenkins (const char *string, size_t length, int ignore_case);
+#endif
 
 #endif
 

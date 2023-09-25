@@ -25,6 +25,7 @@
 #include "lua.h"
 
 #include "lauxlib.h"
+#include "lglmaux.h"
 
 
 #if !defined(MAX_SIZET)
@@ -197,6 +198,9 @@ LUALIB_API int luaL_typeerror (lua_State *L, int arg, const char *tname) {
     typearg = lua_tostring(L, -1);  /* use the given type name */
   else if (lua_type(L, arg) == LUA_TLIGHTUSERDATA)
     typearg = "light userdata";  /* special name for messages */
+  else if (lua_rawtype(L, arg) == LUA_TVECTOR
+    || lua_rawtype(L, arg) == LUA_TMATRIX)
+    typearg = luaglm_typename(L, arg); /* @LuaGLM: use vecN/quat/matX labels */
   else
     typearg = luaL_typename(L, arg);  /* standard name */
   msg = lua_pushfstring(L, "%s expected, got %s", tname, typearg);
@@ -422,7 +426,7 @@ LUALIB_API void luaL_checkstack (lua_State *L, int space, const char *msg) {
 
 
 LUALIB_API void luaL_checktype (lua_State *L, int arg, int t) {
-  if (l_unlikely(lua_type(L, arg) != t))
+  if (l_unlikely(lua_rawtype(L, arg) != t))
     tag_error(L, arg, t);
 }
 
@@ -968,14 +972,10 @@ LUALIB_API const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
       luaL_error(L, "'__tostring' must return a string");
   }
   else {
-    switch (lua_type(L, idx)) {
-      case LUA_TNUMBER: {
-        if (lua_isinteger(L, idx))
-          lua_pushfstring(L, "%I", (LUAI_UACINT)lua_tointeger(L, idx));
-        else
-          lua_pushfstring(L, "%f", (LUAI_UACNUMBER)lua_tonumber(L, idx));
+    switch (lua_rawtype(L, idx)) {
+      case LUA_TNUMBER:
+        luaglm_pushstring(L, idx);  /* @LuaExt: avoid luaO_pushvfstring */
         break;
-      }
       case LUA_TSTRING:
         lua_pushvalue(L, idx);
         break;
@@ -984,6 +984,10 @@ LUALIB_API const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
         break;
       case LUA_TNIL:
         lua_pushliteral(L, "nil");
+        break;
+      case LUA_TVECTOR:
+      case LUA_TMATRIX:
+        luaglm_pushstring(L, idx);
         break;
       default: {
         int tt = luaL_getmetafield(L, idx, "__name");  /* try name */

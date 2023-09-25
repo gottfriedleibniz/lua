@@ -971,7 +971,7 @@ static int str_gsub (lua_State *L) {
   const char *src = luaL_checklstring(L, 1, &srcl);  /* subject */
   const char *p = luaL_checklstring(L, 2, &lp);  /* pattern */
   const char *lastmatch = NULL;  /* end of last match */
-  int tr = lua_type(L, 3);  /* replacement type */
+  int tr = lua_rawtype(L, 3);  /* replacement type */
   lua_Integer max_s = luaL_optinteger(L, 4, srcl + 1);  /* max replacements */
   int anchor = (*p == '^');
   lua_Integer n = 0;  /* replacement count */
@@ -1458,6 +1458,9 @@ typedef enum KOption {
   Kint,		/* signed integers */
   Kuint,	/* unsigned integers */
   Kfloat,	/* single-precision floating-point numbers */
+#if defined(LUA_EXT_HALF)
+  Khalf,	/* half-precision float-point numbers */
+#endif
   Knumber,	/* Lua "native" floating-point numbers */
   Kdouble,	/* double-precision floating-point numbers */
   Kchar,	/* fixed-length strings */
@@ -1530,6 +1533,9 @@ static KOption getoption (Header *h, const char **fmt, int *size) {
     case 'J': *size = sizeof(lua_Integer); return Kuint;
     case 'T': *size = sizeof(size_t); return Kuint;
     case 'f': *size = sizeof(float); return Kfloat;
+#if defined(LUA_EXT_HALF)
+    case 'e': *size = sizeof(l_float16); return Khalf;
+#endif
     case 'n': *size = sizeof(lua_Number); return Knumber;
     case 'd': *size = sizeof(double); return Kdouble;
     case 'i': *size = getnumlimit(h, fmt, sizeof(int)); return Kint;
@@ -1669,6 +1675,15 @@ static int str_pack (lua_State *L) {
         luaL_addsize(&b, size);
         break;
       }
+#if defined(LUA_EXT_HALF)
+      case Khalf: {  /* half-precision floating point */
+        l_float16 f = lua_tohalf((float)luaL_checknumber(L, arg));  /* get argument */
+        char *buff = luaL_prepbuffsize(&b, sizeof(f));
+        copywithendian(buff, (char *)&f, sizeof(f), h.islittle);
+        luaL_addsize(&b, size);
+        break;
+      }
+#endif
       case Knumber: {  /* Lua float */
         lua_Number f = luaL_checknumber(L, arg);  /* get argument */
         char *buff = luaL_prepbuffsize(&b, sizeof(f));
@@ -1812,6 +1827,14 @@ static int str_unpack (lua_State *L) {
         lua_pushnumber(L, (lua_Number)f);
         break;
       }
+#if defined(LUA_EXT_HALF)
+      case Khalf: {
+        l_float16 f;
+        copywithendian((char *)&f, data + pos, sizeof(f), h.islittle);
+        lua_pushnumber(L, (lua_Number)lua_fromhalf(f));
+        break;
+      }
+#endif
       case Knumber: {
         lua_Number f;
         copywithendian((char *)&f, data + pos, sizeof(f), h.islittle);

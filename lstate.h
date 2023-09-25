@@ -359,6 +359,7 @@ union GCUnion {
   struct Proto p;
   struct lua_State th;  /* thread */
   struct UpVal upv;
+  struct GCMatrix mat;
 };
 
 
@@ -381,6 +382,8 @@ union GCUnion {
 #define gco2p(o)  check_exp((o)->tt == LUA_VPROTO, &((cast_u(o))->p))
 #define gco2th(o)  check_exp((o)->tt == LUA_VTHREAD, &((cast_u(o))->th))
 #define gco2upv(o)	check_exp((o)->tt == LUA_VUPVAL, &((cast_u(o))->upv))
+#define gco2mat(o)  \
+	check_exp(novariant((o)->tt) == LUA_TMATRIX, &((cast_u(o))->mat))
 
 
 /*
@@ -388,8 +391,9 @@ union GCUnion {
 ** (The access to 'tt' tries to ensure that 'v' is actually a Lua object.)
 ** @LuaExt: remove variant bits from 'tt'
 */
-#define ttisgco(t)	(((t) >= LUA_TSTRING && (t) <= LUA_TPROTO))
 #define obj2gco(v)	check_exp(ttisgco(novariant((v)->tt)), &(cast_u(v)->gc))
+#define ttisgco(t)	(((t) >= LUA_TSTRING && (t) <= LUA_TTHREAD) \
+			|| ((t) >= LUA_TMATRIX && (t) <= LUA_TPROTO))
 
 
 /* actual number of total bytes allocated */

@@ -455,6 +455,35 @@ void luaO_tostring (lua_State *L, TValue *obj) {
 
 
 
+/*
+** Table for accessing vectors:
+**   x, y, z, w
+**   X, Y, Z, W
+**   r, g, b, a
+**   R, G, B, A
+** Most compilers will compile the equivalent switch statement to a LUT. If
+** RGBA support is dropped, then a LUT will not be needed.
+*/
+#define FF 0xFF
+LUAI_DDEF const lu_byte luaO_vecindex[UCHAR_MAX + 1] = {
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF,   /* 0 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF,  /* 16 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF,  /* 32 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF,  /* 48 */
+  FF,  3,  2, FF, FF, FF, FF,  1, FF, FF, FF, FF, FF, FF, FF, FF,  /* 64 */
+  FF, FF,  0, FF, FF, FF, FF,  3,  0,  1,  2, FF, FF, FF, FF, FF,  /* 80 */
+  FF,  3,  2, FF, FF, FF, FF,  1, FF, FF, FF, FF, FF, FF, FF, FF,  /* 96 */
+  FF, FF,  0, FF, FF, FF, FF,  3,  0,  1,  2, FF, FF, FF, FF, FF, /* 112 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 128 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 144 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 160 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 176 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 192 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 208 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, /* 224 */
+  FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF  /* 240 */
+};
+#undef FF
 
 /*
 ** {==================================================================

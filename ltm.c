@@ -18,6 +18,7 @@
 #include "ldo.h"
 #include "lgc.h"
 #include "lobject.h"
+#include "lglmcore.h"
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
@@ -31,6 +32,7 @@ LUAI_DDEF const char *const luaT_typenames_[LUA_TOTALTYPES] = {
   "no value",
   "nil", "boolean", udatatypename, "number",
   "string", "table", "function", udatatypename, "thread",
+  "vector", "matrix", /* @LuaGLM */
   "upvalue", "proto" /* these last cases are used for tests only */
 };
 
@@ -97,6 +99,8 @@ const char *luaT_objtypename (lua_State *L, const TValue *o) {
     if (ttisstring(name))  /* is '__name' a string? */
       return getstr(tsvalue(name));  /* use it as type name */
   }
+  else if (ttisglm(o))  /* @LuaGLM: use vecN/quat/matX labels */
+    return lglm_typename(o);
   return ttypename(ttype(o));  /* else use standard type name */
 }
 
@@ -149,6 +153,13 @@ static int callbinTM (lua_State *L, const TValue *p1, const TValue *p2,
 void luaT_trybinTM (lua_State *L, const TValue *p1, const TValue *p2,
                     StkId res, TMS event) {
   if (l_unlikely(!callbinTM(L, p1, p2, res, event))) {
+    if (ttisglm(p1) || ttisglm(p2)) {
+      const char *t1 = luaT_objtypename(L, p1);
+      const char *t2 = luaT_objtypename(L, p2);
+      const char *op = getstr(G(L)->tmname[event]) + 2;  /* HACK: ignore __ */
+      luaG_runerror(L, "attempt to %s a %s and %s", op, t1, t2);
+      return;
+    }
     switch (event) {
       case TM_BAND: case TM_BOR: case TM_BXOR:
       case TM_SHL: case TM_SHR: case TM_BNOT: {
@@ -167,9 +178,13 @@ void luaT_trybinTM (lua_State *L, const TValue *p1, const TValue *p2,
 
 void luaT_tryconcatTM (lua_State *L) {
   StkId top = L->top.p;
-  if (l_unlikely(!callbinTM(L, s2v(top - 2), s2v(top - 1), top - 2,
-                               TM_CONCAT)))
-    luaG_concaterror(L, s2v(top - 2), s2v(top - 1));
+  const TValue *p1 = s2v(top - 2);
+  const TValue *p2 = s2v(top - 1);
+  if (l_unlikely(!callbinTM(L, p1, p2, top - 2, TM_CONCAT))) {
+    if (ttisvector(p1) && lvec_concat(p1, p2, top - 2))
+      return;
+    luaG_concaterror(L, p1, p2);
+  }
 }
 
 

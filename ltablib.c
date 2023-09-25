@@ -55,7 +55,7 @@ static void checktab (lua_State *L, int arg, int what) {
 #if defined(LUA_EXT_READONLY)
   if ((what & TAB_W)) treadonly_argcheck(L, arg);
 #endif
-  if (lua_type(L, arg) != LUA_TTABLE) {  /* is it not a table? */
+  if (lua_rawtype(L, arg) != LUA_TTABLE) {  /* is it not a table? */
     int n = 1;  /* number of elements to pop */
     if (lua_getmetatable(L, arg) &&  /* must have metatable */
         (!(what & TAB_R) || checkfield(L, "__index", ++n)) &&

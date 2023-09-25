@@ -85,6 +85,15 @@ LUALIB_API int (luaL_checkoption) (lua_State *L, int arg, const char *def,
 LUALIB_API int (luaL_fileresult) (lua_State *L, int stat, const char *fname);
 LUALIB_API int (luaL_execresult) (lua_State *L, int stat);
 
+/* grit API */
+LUA_API void (luaL_checkvec2) (lua_State *L, int idx, lua_vec2 v2);
+LUA_API void (luaL_checkvec3) (lua_State *L, int idx, lua_vec3 v3);
+LUA_API void (luaL_checkvec4) (lua_State *L, int idx, lua_vec4 v4);
+LUA_API void (luaL_checkquat) (lua_State *L, int idx, lua_versor q);
+
+LUA_API void (luaL_checkmat2) (lua_State *L, int idx, lua_mat2 m2);
+LUA_API void (luaL_checkmat3) (lua_State *L, int idx, lua_mat3 m3);
+LUA_API void (luaL_checkmat4) (lua_State *L, int idx, lua_mat4 m4);
 
 /* predefined references */
 #define LUA_NOREF       (-2)

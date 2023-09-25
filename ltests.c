@@ -487,6 +487,9 @@ static void checkrefs (global_State *g, GCObject *o) {
       checkproto(g, gco2p(o));
       break;
     }
+    case LUA_VMATRIX2:
+    case LUA_VMATRIX3:
+    case LUA_VMATRIX4:
     case LUA_VSHRSTR:
     case LUA_VLNGSTR: {
       assert(!isgray(o));  /* strings are never gray */
@@ -1848,6 +1851,106 @@ static struct X { int x; } x;
     }
     else if EQ("closeslot") {
       lua_closeslot(L1, getnum);
+    }
+    /* grit API */
+    else if EQ ("isvec2") {
+      lua_pushboolean(L1, lua_isvec2(L1, getindex));
+    }
+    else if EQ ("isvec3") {
+      lua_pushboolean(L1, lua_isvec3(L1, getindex));
+    }
+    else if EQ ("isvec4") {
+      lua_pushboolean(L1, lua_isvec4(L1, getindex));
+    }
+    else if EQ ("isquat") {
+      lua_pushboolean(L1, lua_isquat(L1, getindex));
+    }
+    else if EQ ("isvector") {
+      lua_pushinteger(L1, lua_isvector(L1, getindex));
+    }
+    else if EQ ("ismatrix") {
+      lua_pushinteger(L1, lua_ismatrix(L1, getindex));
+    }
+    else if EQ ("pushvec2") {
+      float x = cast(float, getnum);
+      float y = cast(float, getnum);
+      lua_vec2 v2 = { x, y };
+      lua_pushvec2(L1, v2);
+    }
+    else if EQ ("pushvec3") {
+      float x = cast(float, getnum);
+      float y = cast(float, getnum);
+      float z = cast(float, getnum);
+      lua_vec3 v3 = { x, y, z };
+      lua_pushvec3(L1, v3);
+    }
+    else if EQ ("pushvec4") {
+      float x = cast(float, getnum);
+      float y = cast(float, getnum);
+      float z = cast(float, getnum);
+      float w = cast(float, getnum);
+      lua_vec4 v4 = { x, y, z, w };
+      lua_pushvec4(L1, v4);
+    }
+    else if EQ ("pushquat") {
+      float w = cast(float, getnum);
+      float x = cast(float, getnum);
+      float y = cast(float, getnum);
+      float z = cast(float, getnum);
+      lua_versor v = { x, y, z, w };
+      lua_pushquat(L1, v);
+    }
+    else if EQ ("pushvector") {
+      lua_vec4 f4; int length;
+      f4[0] = cast(float, getnum);
+      f4[1] = cast(float, getnum);
+      f4[2] = cast(float, getnum);
+      f4[3] = cast(float, getnum);
+      length = getnum;
+      lua_pushvector(L1, f4, length);
+    }
+    else if EQ ("checkvec2") {
+      lua_vec2 v2;
+      luaL_checkvec2(L, getindex, v2);
+      lua_pushnumber(L1, cast_num(v2[0]));
+      lua_pushnumber(L1, cast_num(v2[1]));
+    }
+    else if EQ ("checkvec3") {
+      lua_vec3 v3;
+      luaL_checkvec3(L1, getindex, v3);
+      lua_pushnumber(L1, cast_num(v3[0]));
+      lua_pushnumber(L1, cast_num(v3[1]));
+      lua_pushnumber(L1, cast_num(v3[2]));
+    }
+    else if EQ ("checkvec4") {
+      lua_vec4 v4;
+      luaL_checkvec4(L1, getindex, v4);
+      lua_pushnumber(L1, cast_num(v4[0]));
+      lua_pushnumber(L1, cast_num(v4[1]));
+      lua_pushnumber(L1, cast_num(v4[2]));
+      lua_pushnumber(L1, cast_num(v4[3]));
+    }
+    else if EQ ("checkquat") {
+      lua_versor v;
+      luaL_checkquat(L1, getindex, v);
+      lua_pushnumber(L1, cast_num(v[3]));
+      lua_pushnumber(L1, cast_num(v[0]));
+      lua_pushnumber(L1, cast_num(v[1]));
+      lua_pushnumber(L1, cast_num(v[2]));
+    }
+    else if EQ ("tovector") {
+      lua_vec4 f4;
+      int i, length = lua_tovector(L1, getindex, f4);
+      for (i = 0; i < length; ++i) {
+        lua_pushnumber(L1, cast_num(f4[i]));
+      }
+    }
+    else if EQ ("toquat") {
+      lua_versor f4; int i;
+      lua_toquat(L1, getindex, f4);
+      for (i = 0; i < 4; ++i) {
+        lua_pushnumber(L1, cast_num(f4[i]));
+      }
     }
     else luaL_error(L, "unknown instruction %s", buff);
   }

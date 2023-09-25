@@ -23,6 +23,7 @@
 #include "lgc.h"
 #include "lmem.h"
 #include "lobject.h"
+#include "lglmcore.h"
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
@@ -319,16 +320,32 @@ LUA_API void lua_replace (lua_State *L, int toidx) {
 */
 
 
+#if defined(LUAGLM_COMPAT_5_4)
+l_sinline int lglm_filter (int t) {  /* @TypeCompat */
+  return (t == LUA_TVECTOR || t == LUA_TMATRIX) ? LUA_TTABLE : t;
+}
+
+LUA_API int lua_rawtype (lua_State *L, int idx) {
+  const TValue *o = index2value(L, idx);
+  return (isvalid(L, o) ? ttype(o) : LUA_TNONE);
+}
+
+LUA_API int lua_type (lua_State *L, int idx) {
+  return lglm_filter(lua_rawtype(L, idx));
+}
+#else
+#define lglm_filter(T) (T)
 LUA_API int lua_type (lua_State *L, int idx) {
   const TValue *o = index2value(L, idx);
   return (isvalid(L, o) ? ttype(o) : LUA_TNONE);
 }
+#endif
 
 
 LUA_API const char *lua_typename (lua_State *L, int t) {
   UNUSED(L);
   api_check(L, LUA_TNONE <= t && t < LUA_NUMTYPES, "invalid type");
-  return ttypename(t);
+  return ttypename(lglm_filter(t));
 }
 
 
@@ -464,6 +481,9 @@ LUA_API const char *lua_tolstring (lua_State *L, int idx, size_t *len) {
 LUA_API lua_Unsigned lua_rawlen (lua_State *L, int idx) {
   const TValue *o = index2value(L, idx);
   switch (ttypetag(o)) {
+    case LUA_VVECTOR2: case LUA_VMATRIX2: return 2;
+    case LUA_VVECTOR3: case LUA_VMATRIX3: return 3;
+    case LUA_VVECTOR4: case LUA_VQUAT: case LUA_VMATRIX4: return 4;
     case LUA_VSHRSTR: return tsvalue(o)->shrlen;
     case LUA_VLNGSTR: return tsvalue(o)->u.lnglen;
     case LUA_VUSERDATA: return uvalue(o)->len;
@@ -674,6 +694,7 @@ LUA_API int lua_pushthread (lua_State *L) {
 */
 
 
+/* @LuaGLM: lua_lock/lua_unlock now happen in same function */
 l_sinline int auxgetstr (lua_State *L, const TValue *t, const char *k) {
   const TValue *slot;
   TString *str = luaS_new(L, k);
@@ -681,13 +702,18 @@ l_sinline int auxgetstr (lua_State *L, const TValue *t, const char *k) {
     setobj2s(L, L->top.p, slot);
     api_incr_top(L);
   }
+  else if (ttisvector(t) && lvec_rawgets(t, k, L->top.p)) {
+    api_incr_top(L);  /* fast-path for single character field access */
+  }
   else {
     setsvalue2s(L, L->top.p, str);
     api_incr_top(L);
-    luaV_finishget(L, t, s2v(L->top.p - 1), L->top.p - 1, slot);
+    if (ttisvector(t))  /* runtime swizzling */
+      lvec_get(L, t, s2v(L->top.p - 1), L->top.p - 1);
+    else
+      luaV_finishget(L, t, s2v(L->top.p - 1), L->top.p - 1, slot);
   }
-  lua_unlock(L);
-  return ttype(s2v(L->top.p - 1));
+  return lglm_filter(ttype(s2v(L->top.p - 1)));
 }
 
 
@@ -702,10 +728,13 @@ l_sinline int auxgetstr (lua_State *L, const TValue *t, const char *k) {
 
 
 LUA_API int lua_getglobal (lua_State *L, const char *name) {
+  int result;
   const TValue *G;
   lua_lock(L);
   G = getGtable(L);
-  return auxgetstr(L, G, name);
+  result = auxgetstr(L, G, name);
+  lua_unlock(L);
+  return result;
 }
 
 
@@ -717,16 +746,25 @@ LUA_API int lua_gettable (lua_State *L, int idx) {
   if (luaV_fastget(L, t, s2v(L->top.p - 1), slot, luaH_get)) {
     setobj2s(L, L->top.p - 1, slot);
   }
+  else if (ttisvector(t))
+    lvec_get(L, t, s2v(L->top.p - 1), L->top.p - 1);
+  else if (ttismatrix(t))
+    lmat_get(L, t, s2v(L->top.p - 1), L->top.p - 1);
   else
     luaV_finishget(L, t, s2v(L->top.p - 1), L->top.p - 1, slot);
   lua_unlock(L);
-  return ttype(s2v(L->top.p - 1));
+  return lglm_filter(ttype(s2v(L->top.p - 1)));
 }
 
 
 LUA_API int lua_getfield (lua_State *L, int idx, const char *k) {
+  int result;
+  TValue *v;
   lua_lock(L);
-  return auxgetstr(L, index2value(L, idx), k);
+  v = index2value(L, idx);
+  result = auxgetstr(L, v, k);
+  lua_unlock(L);
+  return result;
 }
 
 
@@ -738,6 +776,11 @@ LUA_API int lua_geti (lua_State *L, int idx, lua_Integer n) {
   if (luaV_fastgeti(L, t, n, slot)) {
     setobj2s(L, L->top.p, slot);
   }
+  /* integer accessing requires no specialized logic; inline */
+  else if ((ttisvector(t) && lvec_fastgeti(t, n, L->top.p))
+    || (ttismatrix(t) && lmat_fastgeti(t, n, L->top.p))) {
+    /* FALLTHROUGH */
+  }
   else {
     TValue aux;
     setivalue(&aux, n);
@@ -745,55 +788,102 @@ LUA_API int lua_geti (lua_State *L, int idx, lua_Integer n) {
   }
   api_incr_top(L);
   lua_unlock(L);
-  return ttype(s2v(L->top.p - 1));
+  return lglm_filter(ttype(s2v(L->top.p - 1)));
 }
 
 
+/* @LuaGLM: lua_lock/lua_unlock happen in same function */
 l_sinline int finishrawget (lua_State *L, const TValue *val) {
   if (isempty(val))  /* avoid copying empty items to the stack */
     setnilvalue(s2v(L->top.p));
   else
     setobj2s(L, L->top.p, val);
   api_incr_top(L);
-  lua_unlock(L);
-  return ttype(s2v(L->top.p - 1));
+  return lglm_filter(ttype(s2v(L->top.p - 1)));
 }
 
 
+#if defined(LUA_EXT_API) || defined(LUA_EXT_READONLY)
 static Table *gettable (lua_State *L, int idx) {
   TValue *t = index2value(L, idx);
+#if defined(LUAGLM_COMPAT_5_4)
+  api_check(L, ttistable(t) || ttisglm(t), "table expected");
+  return ttistable(t) ? hvalue(t) : NULL;
+#else
   api_check(L, ttistable(t), "table expected");
   return hvalue(t);
+#endif
 }
+#endif
 
 
 LUA_API int lua_rawget (lua_State *L, int idx) {
-  Table *t;
-  const TValue *val;
+  int result;
+  const TValue *o;
   lua_lock(L);
   api_checknelems(L, 1);
-  t = gettable(L, idx);
-  val = luaH_get(t, s2v(L->top.p - 1));
-  L->top.p--;  /* remove key */
-  return finishrawget(L, val);
+  o = index2value(L, idx);
+  if (l_likely(ttistable(o))) {
+    const TValue *val = luaH_get(hvalue(o), s2v(L->top.p - 1));
+    L->top.p--;  /* remove key */
+    result = finishrawget(L, val);
+  }
+  else if (ttisvector(o))
+    result = lvec_rawget(o, s2v(L->top.p - 1), L->top.p - 1);
+  else if (ttismatrix(o))
+    result = lmat_rawget(o, s2v(L->top.p - 1), L->top.p - 1);
+  else {
+    luai_apicheck(L, !"table expected");
+    result = 0;
+  }
+  lua_unlock(L);
+  return result;
 }
 
 
 LUA_API int lua_rawgeti (lua_State *L, int idx, lua_Integer n) {
-  Table *t;
+  int result;
+  const TValue *o;
   lua_lock(L);
-  t = gettable(L, idx);
-  return finishrawget(L, luaH_getint(t, n));
+  o = index2value(L, idx);
+  if (l_likely(ttistable(o)))
+    result = finishrawget(L, luaH_getint(hvalue(o), n));
+  else if (ttisvector(o)) {
+    result = lvec_rawgeti(o, n, L->top.p);
+    api_incr_top(L);
+  }
+  else if (ttismatrix(o)) {
+    result = lmat_rawgeti(o, n, L->top.p);
+    api_incr_top(L);
+  }
+  else {
+    luai_apicheck(L, !"table expected");
+    result = 0;
+  }
+  lua_unlock(L);
+  return result;
 }
 
 
 LUA_API int lua_rawgetp (lua_State *L, int idx, const void *p) {
-  Table *t;
+  int result;
+  TValue *t;
   TValue k;
   lua_lock(L);
-  t = gettable(L, idx);
+  t = index2value(L, idx);
+#if defined(LUAGLM_COMPAT_5_4)
+  if (ttisglm(t)) {
+    setnilvalue(s2v(L->top.p));
+    api_incr_top(L);
+    lua_unlock(L);
+    return LUA_TNIL;
+  }
+#endif
+  api_check(L, ttistable(t), "table expected");
   setpvalue(&k, cast_voidp(p));
-  return finishrawget(L, luaH_get(t, &k));
+  result = finishrawget(L, luaH_get(hvalue(t), &k));
+  lua_unlock(L);
+  return result;
 }
 
 
@@ -956,7 +1046,7 @@ LUA_API int lua_getiuservalue (lua_State *L, int idx, int n) {
   }
   else {
     setobj2s(L, L->top.p, &uvalue(o)->uv[n - 1].uv);
-    t = ttype(s2v(L->top.p));
+    t = lglm_filter(ttype(s2v(L->top.p)));
   }
   api_incr_top(L);
   lua_unlock(L);
@@ -983,6 +1073,7 @@ static void auxsetstr (lua_State *L, const TValue *t, const char *k) {
   else {
     setsvalue2s(L, L->top.p, str);  /* push 'str' (to make it a TValue) */
     api_incr_top(L);
+    /* @LuaGLM: matrices have no specialized logic for strings. */
     luaV_finishset(L, t, s2v(L->top.p - 1), s2v(L->top.p - 2), slot);
     L->top.p -= 2;  /* pop value and key */
   }
@@ -1008,6 +1099,8 @@ LUA_API void lua_settable (lua_State *L, int idx) {
     readonly_api_check(L, hvalue(t));
     luaV_finishfastset(L, t, slot, s2v(L->top.p - 1));
   }
+  else if (ttismatrix(t))
+    lmat_set(L, t, s2v(L->top.p - 2), s2v(L->top.p - 1));
   else
     luaV_finishset(L, t, s2v(L->top.p - 2), s2v(L->top.p - 1), slot);
   L->top.p -= 2;  /* pop index and value */
@@ -1031,6 +1124,8 @@ LUA_API void lua_seti (lua_State *L, int idx, lua_Integer n) {
     readonly_api_check(L, hvalue(t));
     luaV_finishfastset(L, t, slot, s2v(L->top.p - 1));
   }
+  else if (ttismatrix(t))
+    lmat_seti(L, t, n, s2v(L->top.p - 1));
   else {
     TValue aux;
     setivalue(&aux, n);
@@ -1042,13 +1137,25 @@ LUA_API void lua_seti (lua_State *L, int idx, lua_Integer n) {
 
 
 static void aux_rawset (lua_State *L, int idx, TValue *key, int n) {
-  Table *t;
+  TValue *v;
   lua_lock(L);
   api_checknelems(L, n);
-  t = gettable(L, idx);
-  luaH_set(L, t, key, s2v(L->top.p - 1));
-  invalidateTMcache(t);
-  luaC_barrierback(L, obj2gco(t), s2v(L->top.p - 1));
+  v = index2value(L, idx);
+  if (l_likely(ttistable(v))) {
+    Table *t = hvalue(v);
+    readonly_api_check(L, t);
+    luaH_set(L, t, key, s2v(L->top.p - 1));
+    invalidateTMcache(t);
+    luaC_barrierback(L, obj2gco(t), s2v(L->top.p - 1));
+  }
+#if defined(LUAGLM_COMPAT_5_4)
+  else if (ttisvector(v)) { /* Fail silently */ }
+#endif
+  else if (ttismatrix(v))
+    lmat_rawset(L, v, key, s2v(L->top.p - 1));
+  else {
+    luai_apicheck(L, !"table expected");
+  }
   L->top.p -= n;
   lua_unlock(L);
 }
@@ -1067,12 +1174,27 @@ LUA_API void lua_rawsetp (lua_State *L, int idx, const void *p) {
 
 
 LUA_API void lua_rawseti (lua_State *L, int idx, lua_Integer n) {
-  Table *t;
+  TValue *v;
   lua_lock(L);
   api_checknelems(L, 1);
-  t = gettable(L, idx);
-  luaH_setint(L, t, n, s2v(L->top.p - 1));
-  luaC_barrierback(L, obj2gco(t), s2v(L->top.p - 1));
+  v = index2value(L, idx);
+  if (l_likely(ttistable(v))) {
+    Table *t = hvalue(v);
+    readonly_api_check(L, t);
+    luaH_setint(L, t, n, s2v(L->top.p - 1));
+    luaC_barrierback(L, obj2gco(t), s2v(L->top.p - 1));
+  }
+#if defined(LUAGLM_COMPAT_5_4) /* Fail silently */
+  else if (ttisvector(v)) { }
+#endif
+  else if (ttismatrix(v)) {
+    TValue key;
+    setivalue(&key, n);
+    lmat_rawset(L, v, &key, s2v(L->top.p - 1));
+  }
+  else {
+    luai_apicheck(L, !"table expected");
+  }
   L->top.p--;
   lua_unlock(L);
 }
@@ -1108,6 +1230,15 @@ LUA_API int lua_setmetatable (lua_State *L, int objindex) {
       }
       break;
     }
+#if defined(LUAGLM_COMPAT_5_4)
+    /* @LuaGLM: vectors and matrices have a metatable per-type. Tables have a
+     * metatable per-object. Avoid conflict and fail silently if compiled
+     * without asserts. */
+    case LUA_TVECTOR: case LUA_TMATRIX: {
+      luai_apicheck(L, !"setmetatable on GLM specialization");
+      break;
+    }
+#endif
     default: {
       G(L)->mt[ttype(obj)] = mt;
       break;
@@ -1400,12 +1531,21 @@ LUA_API int lua_error (lua_State *L) {
 
 
 LUA_API int lua_next (lua_State *L, int idx) {
-  Table *t;
+  const TValue *o;
   int more;
   lua_lock(L);
   api_checknelems(L, 1);
-  t = gettable(L, idx);
-  more = luaH_next(L, t, L->top.p - 1);
+  o = index2value(L, idx);
+  if (l_likely(ttistable(o)))
+    more = luaH_next(L, hvalue(o), L->top.p - 1);
+  else if (ttisvector(o))
+    more = lvec_next(o, L->top.p - 1);
+  else if (ttismatrix(o))
+    more = lmat_next(o, L->top.p - 1);
+  else {
+    luai_apicheck(L, !"table expected");
+    more = 0;
+  }
   if (more) {
     api_incr_top(L);
   }
@@ -1449,7 +1589,7 @@ LUA_API void lua_len (lua_State *L, int idx) {
   TValue *t;
   lua_lock(L);
   t = index2value(L, idx);
-  luaV_objlen(L, L->top.p, t);
+  luaV_objlen(L, L->top.p, t, 1);
   api_incr_top(L);
   lua_unlock(L);
 }

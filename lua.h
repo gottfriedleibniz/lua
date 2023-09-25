@@ -70,8 +70,10 @@ typedef struct lua_State lua_State;
 #define LUA_TFUNCTION		6
 #define LUA_TUSERDATA		7
 #define LUA_TTHREAD		8
+#define LUA_TVECTOR		9
+#define LUA_TMATRIX		10
 
-#define LUA_NUMTYPES		9
+#define LUA_NUMTYPES		11
 
 
 
@@ -530,6 +532,62 @@ struct lua_Debug {
   /* private part */
   struct CallInfo *i_ci;  /* active function */
 };
+
+/* }============================================================ */
+
+/*
+** {==============================================================
+** Vector API
+** ===============================================================
+*/
+
+/* lua_type that does not sanitize vector/matrix values (@TypeCompat) */
+#if defined(LUAGLM_COMPAT_5_4)
+LUA_API int (lua_rawtype) (lua_State *L, int idx);
+#else
+#define lua_rawtype(L, I) lua_type((L), (I))
+#endif
+
+LUA_API int (lua_isvector) (lua_State *L, int idx);
+LUA_API int (lua_isquat) (lua_State *L, int idx);
+LUA_API int (lua_ismatrix) (lua_State *L, int idx);
+
+LUA_API int (lua_isvec2) (lua_State *L, int idx);
+LUA_API int (lua_isvec3) (lua_State *L, int idx);
+LUA_API int (lua_isvec4) (lua_State *L, int idx);
+LUA_API int (lua_ismat2) (lua_State *L, int idx);
+LUA_API int (lua_ismat3) (lua_State *L, int idx);
+LUA_API int (lua_ismat4) (lua_State *L, int idx);
+
+LUA_API int (lua_tovec2) (lua_State *L, int idx, lua_vec2 v2);
+LUA_API int (lua_tovec3) (lua_State *L, int idx, lua_vec3 v3);
+LUA_API int (lua_tovec4) (lua_State *L, int idx, lua_vec4 v4);
+LUA_API int (lua_toquat) (lua_State *L, int idx, lua_versor q);
+LUA_API int (lua_tomat2) (lua_State *L, int idx, lua_mat2 m2);
+LUA_API int (lua_tomat3) (lua_State *L, int idx, lua_mat3 m3);
+LUA_API int (lua_tomat4) (lua_State *L, int idx, lua_mat4 m4);
+
+LUA_API void (lua_pushvec2) (lua_State *L, const lua_vec2 v2);
+LUA_API void (lua_pushvec3) (lua_State *L, const lua_vec3 v3);
+LUA_API void (lua_pushvec4) (lua_State *L, const lua_vec4 v4);
+LUA_API void (lua_pushquat) (lua_State *L, const lua_versor q);
+LUA_API void (lua_pushmat2) (lua_State *L, const lua_mat2 m2);
+LUA_API void (lua_pushmat3) (lua_State *L, const lua_mat3 m3);
+LUA_API void (lua_pushmat4) (lua_State *L, const lua_mat4 m4);
+
+LUA_API int  (lua_tovector) (lua_State *L, int idx, float *v);
+LUA_API void (lua_pushvector) (lua_State *L, const float *v, int length);
+#if !defined(LUAGLM_HALF_TYPE)
+LUA_API const float *(lua_torawvector) (lua_State *L, int idx, int *length);
+#endif
+
+/* Encodings */
+
+LUA_API l_float16 (lua_tohalf) (float input);
+LUA_API float     (lua_fromhalf) (l_float16 input);
+
+LUA_API void (lua_tohalf4) (const lua_vec4 v, lua_hvec4 dest);
+LUA_API void (lua_fromhalf4) (const lua_hvec4 v, lua_vec4 dest);
 
 /* }============================================================ */
 

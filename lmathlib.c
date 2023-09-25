@@ -20,12 +20,14 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+#include "lglmaux.h"
 
 
 #undef PI
 #define PI	(l_mathop(3.141592653589793238462643383279502884))
 
 
+#if 0
 static int math_abs (lua_State *L) {
   if (lua_isinteger(L, 1)) {
     lua_Integer n = lua_tointeger(L, 1);
@@ -68,6 +70,7 @@ static int math_atan (lua_State *L) {
   lua_pushnumber(L, l_mathop(atan2)(y, x));
   return 1;
 }
+#endif
 
 
 static int math_toint (lua_State *L) {
@@ -83,6 +86,7 @@ static int math_toint (lua_State *L) {
 }
 
 
+#if 0
 static void pushnumint (lua_State *L, lua_Number d) {
   lua_Integer n;
   if (lua_numbertointeger(d, &n))  /* does 'd' fit in an integer? */
@@ -157,6 +161,7 @@ static int math_sqrt (lua_State *L) {
   lua_pushnumber(L, l_mathop(sqrt)(luaL_checknumber(L, 1)));
   return 1;
 }
+#endif
 
 
 static int math_ult (lua_State *L) {
@@ -166,6 +171,7 @@ static int math_ult (lua_State *L) {
   return 1;
 }
 
+#if 0
 static int math_log (lua_State *L) {
   lua_Number x = luaL_checknumber(L, 1);
   lua_Number res;
@@ -201,6 +207,7 @@ static int math_rad (lua_State *L) {
   lua_pushnumber(L, luaL_checknumber(L, 1) * (PI / l_mathop(180.0)));
   return 1;
 }
+#endif
 
 
 static int math_min (lua_State *L) {
@@ -673,6 +680,7 @@ static void setrandfunc (lua_State *L) {
 */
 #if defined(LUA_COMPAT_MATHLIB)
 
+#if 0
 static int math_cosh (lua_State *L) {
   lua_pushnumber(L, l_mathop(cosh)(luaL_checknumber(L, 1)));
   return 1;
@@ -708,6 +716,7 @@ static int math_ldexp (lua_State *L) {
   lua_pushnumber(L, l_mathop(ldexp)(x, ep));
   return 1;
 }
+#endif
 
 static int math_log10 (lua_State *L) {
   lua_pushnumber(L, l_mathop(log10)(luaL_checknumber(L, 1)));
@@ -720,35 +729,35 @@ static int math_log10 (lua_State *L) {
 
 
 static const luaL_Reg mathlib[] = {
-  {"abs",   math_abs},
-  {"acos",  math_acos},
-  {"asin",  math_asin},
-  {"atan",  math_atan},
-  {"ceil",  math_ceil},
-  {"cos",   math_cos},
-  {"deg",   math_deg},
-  {"exp",   math_exp},
+  {"abs",   luaglm_abs},
+  {"acos",  luaglm_acos},
+  {"asin",  luaglm_asin},
+  {"atan",  luaglm_atan},
+  {"ceil",  luaglm_ceil},
+  {"cos",   luaglm_cos},
+  {"deg",   luaglm_deg},
+  {"exp",   luaglm_exp},
   {"tointeger", math_toint},
-  {"floor", math_floor},
-  {"fmod",   math_fmod},
+  {"floor", luaglm_floor},
+  {"fmod",   luaglm_mod},
   {"ult",   math_ult},
-  {"log",   math_log},
+  {"log",   luaglm_log},
   {"max",   math_max},
   {"min",   math_min},
-  {"modf",   math_modf},
-  {"rad",   math_rad},
-  {"sin",   math_sin},
-  {"sqrt",  math_sqrt},
-  {"tan",   math_tan},
+  {"modf",   luaglm_modf},
+  {"rad",   luaglm_rad},
+  {"sin",   luaglm_sin},
+  {"sqrt",  luaglm_sqrt},
+  {"tan",   luaglm_tan},
   {"type", math_type},
 #if defined(LUA_COMPAT_MATHLIB)
-  {"atan2", math_atan},
-  {"cosh",   math_cosh},
-  {"sinh",   math_sinh},
-  {"tanh",   math_tanh},
-  {"pow",   math_pow},
-  {"frexp", math_frexp},
-  {"ldexp", math_ldexp},
+  {"atan2", luaglm_atan},
+  {"cosh",   luaglm_cosh},
+  {"sinh",   luaglm_sinh},
+  {"tanh",   luaglm_tanh},
+  {"pow",   luaglm_pow},
+  {"frexp", luaglm_frexp},
+  {"ldexp", luaglm_ldexp},
   {"log10", math_log10},
 #endif
   /* placeholders */
@@ -756,6 +765,7 @@ static const luaL_Reg mathlib[] = {
   {"randomseed", NULL},
   {"pi", NULL},
   {"huge", NULL},
+  {"nan", NULL},
   {"maxinteger", NULL},
   {"mininteger", NULL},
   {NULL, NULL}
@@ -771,6 +781,8 @@ LUAMOD_API int luaopen_math (lua_State *L) {
   lua_setfield(L, -2, "pi");
   lua_pushnumber(L, (lua_Number)HUGE_VAL);
   lua_setfield(L, -2, "huge");
+  lua_pushnumber(L, (lua_Number)NAN);
+  lua_setfield(L, -2, "nan");
   lua_pushinteger(L, LUA_MAXINTEGER);
   lua_setfield(L, -2, "maxinteger");
   lua_pushinteger(L, LUA_MININTEGER);

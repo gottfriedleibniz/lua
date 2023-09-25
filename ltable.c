@@ -33,6 +33,7 @@
 #include "lgc.h"
 #include "lmem.h"
 #include "lobject.h"
+#include "lglmcore.h"
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
@@ -180,6 +181,9 @@ static Node *mainpositionTV (const Table *t, const TValue *key) {
       lua_CFunction f = fvalue(key);
       return hashpointer(t, f);
     }
+    case LUA_VVECTOR2: case LUA_VVECTOR3: case LUA_VVECTOR4: case LUA_VQUAT: {
+      return hashpow2(t, lvec_hashkey(key));
+    }
     default: {
       GCObject *o = gcvalue(key);
       return hashpointer(t, o);
@@ -232,6 +236,8 @@ static int equalkey (const TValue *k1, const Node *n2, int deadok) {
       return fvalue(k1) == fvalueraw(keyval(n2));
     case ctb(LUA_VLNGSTR):
       return luaS_eqlngstr(tsvalue(k1), keystrval(n2));
+    case LUA_VVECTOR2: case LUA_VVECTOR3: case LUA_VVECTOR4: case LUA_VQUAT:
+      return lvec_equalkey(k1, n2, keytt(n2));
     default:
       return gcvalue(k1) == gcvalueraw(keyval(n2));
   }
@@ -709,6 +715,11 @@ static void luaH_newkey (lua_State *L, Table *t, const TValue *key,
     }
     else if (l_unlikely(luai_numisnan(f)))
       luaG_runerror(L, "table index is NaN");
+  }
+  else if (ttisvector(key)) {
+    if (l_unlikely(!lvec_validkey(key))) {
+      luaG_runerror(L, "vector index has a NaN element");
+    }
   }
   if (ttisnil(value))
     return;  /* do not insert nil values */

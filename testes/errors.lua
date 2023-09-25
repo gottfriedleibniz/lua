@@ -222,7 +222,7 @@ checkmessage([[
 _G.D = nil
 
 do   -- named objects (field '__name')
-  checkmessage("math.sin(io.input())", "(number expected, got FILE*)")
+  checkmessage("math.sin(io.input())", "unexpected arguments")
   _G.XX = setmetatable({}, {__name = "My Type"})
   assert(string.find(tostring(XX), "^My Type"))
   checkmessage("io.input(XX)", "(FILE* expected, got My Type)")
@@ -309,7 +309,7 @@ end]], "global 'insert'")
 
 checkmessage([[  -- tail call
   return math.sin("a")
-]], "sin")
+]], "unexpected arguments")
 
 checkmessage([[collectgarbage("nooption")]], "invalid option")
 

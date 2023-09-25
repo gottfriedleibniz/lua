@@ -698,8 +698,8 @@ do   -- testing floor & ceil
     assert(math.ceil(2^p) == 2^p)
     assert(math.ceil(2^p - 0.5) == 2^p)
   end
-  checkerror("number expected", math.floor, {})
-  checkerror("number expected", math.ceil, print)
+  checkerror("unexpected arguments", math.floor, {})
+  checkerror("unexpected arguments", math.ceil, print)
   assert(eqT(math.tointeger(minint), minint))
   assert(eqT(math.tointeger(minint .. ""), minint))
   assert(eqT(math.tointeger(maxint), maxint))

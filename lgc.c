@@ -296,6 +296,9 @@ GCObject *luaC_newobj (lua_State *L, int tt, size_t sz) {
 */
 static void reallymarkobject (global_State *g, GCObject *o) {
   switch (o->tt) {
+    case LUA_VMATRIX2:
+    case LUA_VMATRIX3:
+    case LUA_VMATRIX4:
     case LUA_VSHRSTR:
     case LUA_VLNGSTR: {
       set2black(o);  /* nothing to visit */
@@ -789,6 +792,11 @@ static void freeobj (lua_State *L, GCObject *o) {
     }
     case LUA_VTABLE:
       luaH_free(L, gco2t(o));
+      break;
+    case LUA_VMATRIX2:
+    case LUA_VMATRIX3:
+    case LUA_VMATRIX4:
+      luaM_free_(L, gco2mat(o), sizeof(GCMatrix));
       break;
     case LUA_VTHREAD:
       luaE_freethread(L, gco2th(o));

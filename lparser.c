@@ -168,6 +168,14 @@ static void codename (LexState *ls, expdesc *e) {
 }
 
 
+#if defined(LUA_EXT_JOAAT)
+static void codehash (expdesc *e, TString *s) {
+  init_exp(e, VKINT, 0);
+  e->u.ival = l_castU2S(luaO_jenkins(getstr(s), tsslen(s), 0));
+}
+#endif
+
+
 /*
 ** Register a new local variable in the active 'Proto' (for debug
 ** information).
@@ -1129,6 +1137,13 @@ static void funcargs (LexState *ls, expdesc *f) {
       luaX_next(ls);  /* must use 'seminfo' before 'next' */
       break;
     }
+#if defined(LUA_EXT_JOAAT)
+    case TK_HASH: {  /* funcargs -> HASH */
+      codehash(&args, ls->t.seminfo.ts);
+      luaX_next(ls);  /* must use `seminfo' before `next' */
+      break;
+    }
+#endif
     default: {
       luaX_syntaxerror(ls, "function arguments expected");
     }
@@ -1180,7 +1195,11 @@ static void primaryexp (LexState *ls, expdesc *v) {
 }
 
 #if defined(LUA_EXT_SAFENAV)
-#define safectoken(T) ((T) == '(' || (T) == '{' || (T) == TK_STRING)
+#if defined(LUA_EXT_JOAAT)
+  #define safectoken(T) ((T) == '(' || (T) == '{' || (T) == TK_STRING || (T) == TK_HASH)
+#else
+  #define safectoken(T) ((T) == '(' || (T) == '{' || (T) == TK_STRING)
+#endif
 
 /* Emit a conditional jump and concatenate to safenav list */
 static void safetest (FuncState *fs, int A, int *escapelist) {
@@ -1238,6 +1257,9 @@ static void safenav (LexState *ls, expdesc *v, int *escapelist) {
         safetest(fs, v->u.info, escapelist);
       funcargs(ls, v);
       break;
+#if defined(LUA_EXT_JOAAT)
+    case TK_HASH:
+#endif
     case '(': case TK_STRING: case '{':
       funcargs(ls, v);
       break;
@@ -1293,6 +1315,9 @@ static void suffixedexp (LexState *ls, expdesc *v) {
         funcargs(ls, v);
         break;
       }
+#if defined(LUA_EXT_JOAAT)
+      case TK_HASH:
+#endif
       case '(': case TK_STRING: case '{': {  /* funcargs */
         luaK_exp2nextreg(fs, v);
         funcargs(ls, v);
@@ -1354,6 +1379,12 @@ static void simpleexp (LexState *ls, expdesc *v) {
       codestring(v, ls->t.seminfo.ts);
       break;
     }
+#if defined(LUA_EXT_JOAAT)
+    case TK_HASH: {
+      codehash(v, ls->t.seminfo.ts);
+      break;
+    }
+#endif
     case TK_NIL: {
       init_exp(v, VNIL, 0);
       break;
