@@ -60,5 +60,8 @@ LUAI_FUNC l_noret luaG_errormsg (lua_State *L);
 LUAI_FUNC int luaG_traceexec (lua_State *L, const Instruction *pc);
 LUAI_FUNC int luaG_tracecall (lua_State *L);
 
+#if defined(LUA_EXT_READONLY)
+LUAI_FUNC l_noret luaG_readonlyerror (lua_State *L);
+#endif
 
 #endif

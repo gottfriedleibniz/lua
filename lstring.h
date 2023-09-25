@@ -48,7 +48,12 @@ LUAI_FUNC void luaS_resize (lua_State *L, int newsize);
 LUAI_FUNC void luaS_clearcache (global_State *g);
 LUAI_FUNC void luaS_init (lua_State *L);
 LUAI_FUNC void luaS_remove (lua_State *L, TString *ts);
+#if defined(LUA_EXT_USERTAG)
+#define luaS_newudata(L, S, N) luaS_newudatatag(L, S, N, 0)
+LUAI_FUNC Udata *luaS_newudatatag (lua_State *L, size_t s, int nuvalue, int tag);
+#else
 LUAI_FUNC Udata *luaS_newudata (lua_State *L, size_t s, int nuvalue);
+#endif
 LUAI_FUNC TString *luaS_newlstr (lua_State *L, const char *str, size_t l);
 LUAI_FUNC TString *luaS_new (lua_State *L, const char *str);
 LUAI_FUNC TString *luaS_createlngstrobj (lua_State *L, size_t l);

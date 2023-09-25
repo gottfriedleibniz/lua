@@ -16,6 +16,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_MSC_VER)
+  #include <intrin.h>
+  #pragma intrinsic(_BitScanReverse)
+#endif
 
 #include "lua.h"
 
@@ -33,6 +37,17 @@
 ** Computes ceil(log2(x))
 */
 int luaO_ceillog2 (unsigned int x) {
+#if LUA_HAS_BUILTIN(__builtin_clz)
+  /* It should be possible to mask (e.g., cmov/csel) the "undefined result" part
+   * of __builtin_clz. Current approach avoids headaches. */
+  const int bits = cast_int(sizeof(unsigned int) * CHAR_BIT);
+  return (x > 1) ? (bits - __builtin_clz(x - 1)) : 0;
+#elif defined(_MSC_VER)
+  unsigned long index;
+  if (x > 1 && _BitScanReverse(&index, cast(unsigned long, x) - 1))
+    return cast_int(index + 1);
+  return 0;
+#else
   static const lu_byte log_2[256] = {  /* log_2[i] = ceil(log2(i - 1)) */
     0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
     6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
@@ -47,6 +62,7 @@ int luaO_ceillog2 (unsigned int x) {
   x--;
   while (x >= 256) { l += 8; x >>= 8; }
   return l + log_2[x];
+#endif
 }
 
 
@@ -230,6 +246,10 @@ static const char *l_str2dloc (const char *s, lua_Number *result, int mode) {
   *result = (mode == 'x') ? lua_strx2number(s, &endptr)  /* try to convert */
                           : lua_str2number(s, &endptr);
   if (endptr == s) return NULL;  /* nothing recognized? */
+#if defined(LUA_EXT_LITERAL)
+  if (mode == 'f' && (*endptr == 'f' || *endptr == 'F'))
+    endptr++;  /* skip trailing suffix */
+#endif
   while (lisspace(cast_uchar(*endptr))) endptr++;  /* skip trailing spaces */
   return (*endptr == '\0') ? endptr : NULL;  /* OK iff no trailing chars */
 }
@@ -250,10 +270,20 @@ static const char *l_str2dloc (const char *s, lua_Number *result, int mode) {
 */
 static const char *l_str2d (const char *s, lua_Number *result) {
   const char *endptr;
+#if defined(LUA_EXT_LITERAL)
+  const char *pmode = strpbrk(s, ".xXnNfF");
+#else
   const char *pmode = strpbrk(s, ".xXnN");  /* look for special chars */
+#endif
   int mode = pmode ? ltolower(cast_uchar(*pmode)) : 0;
   if (mode == 'n')  /* reject 'inf' and 'nan' */
     return NULL;
+#if defined(LUA_EXT_LITERAL)
+  else if (mode == '.') {  /* Allow .f suffixes to numbers */
+    const char *fsuffix = strpbrk(pmode, "fF");
+    mode = fsuffix ? ltolower(cast_uchar(*fsuffix)) : mode;
+  }
+#endif
   endptr = l_str2dloc(s, result, mode);  /* try to convert */
   if (endptr == NULL) {  /* failed? may be a different locale */
     char buff[L_MAXLENNUM + 1];
@@ -287,6 +317,18 @@ static const char *l_str2int (const char *s, lua_Integer *result) {
       empty = 0;
     }
   }
+#if defined(LUA_EXT_LITERAL)
+  else if (s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) {  /* binary? */
+    s += 2;  /* skip '0b' */
+    for (; lisdigit(cast_uchar(*s)); s++) {
+      int d = *s - '0';
+      if (d >= 2)  /* correct digit? */
+        return NULL;
+      a = a * 2 + d;
+      empty = 0;
+    }
+  }
+#endif
   else {  /* decimal */
     for (; lisdigit(cast_uchar(*s)); s++) {
       int d = *s - '0';
@@ -348,15 +390,49 @@ int luaO_utf8esc (char *buff, unsigned long x) {
 */
 #define MAXNUMBER2STR	44
 
+#if defined(LUA_EXT_ITOA)
+static void l_utoa (lua_Unsigned x, char *back, char **front) {
+  static const char digits[] = "0001020304050607080910111213141516171819"
+                               "2021222324252627282930313233343536373839"
+                               "4041424344454647484950515253545556575859"
+                               "6061626364656667686970717273747576777879"
+                               "8081828384858687888990919293949596979899";
+  while (x >= 100) {
+    memcpy(back -= 2, &digits[2 * (x % 100)], 2);
+    x /= 100;
+  }
+
+  if (x < 10)
+    *--back = cast_char('0' + x);
+  else
+    memcpy(back -= 2, &digits[2 * x], 2);
+  *front = back;
+}
+
+static int l_itoa (char *buff, size_t sz, lua_Integer x) {
+  char *front, *back = buff + sz;
+  lua_Unsigned u = l_castS2U(x);  /* Handle LUA_MININTEGER separately? */
+  l_utoa((x >= 0) ? u : 0 - u, back, &front);
+  if (x < 0)
+    *--front = '-';
+  memmove(buff, front, cast_sizet(back - front));
+  return cast_int(back - front);
+}
+#endif
 
 /*
 ** Convert a number object to a string, adding it to a buffer
 */
-static int tostringbuff (TValue *obj, char *buff) {
+int luaO_tostringbuff (const TValue *obj, char *buff) {
   int len;
   lua_assert(ttisnumber(obj));
-  if (ttisinteger(obj))
+  if (ttisinteger(obj)) {
+#if defined(LUA_EXT_ITOA)
+    len = l_itoa(buff, MAXNUMBER2STR, ivalue(obj));
+#else
     len = lua_integer2str(buff, MAXNUMBER2STR, ivalue(obj));
+#endif
+  }
   else {
     len = lua_number2str(buff, MAXNUMBER2STR, fltvalue(obj));
     if (buff[strspn(buff, "-0123456789")] == '\0') {  /* looks like an int? */
@@ -373,7 +449,7 @@ static int tostringbuff (TValue *obj, char *buff) {
 */
 void luaO_tostring (lua_State *L, TValue *obj) {
   char buff[MAXNUMBER2STR];
-  int len = tostringbuff(obj, buff);
+  int len = luaO_tostringbuff(obj, buff);
   setsvalue(L, obj, luaS_newlstr(L, buff, len));
 }
 
@@ -468,7 +544,7 @@ static void addstr2buff (BuffFS *buff, const char *str, size_t slen) {
 */
 static void addnum2buff (BuffFS *buff, TValue *num) {
   char *numbuff = getbuff(buff, MAXNUMBER2STR);
-  int len = tostringbuff(num, numbuff);  /* format number into 'numbuff' */
+  int len = luaO_tostringbuff(num, numbuff);  /* format number into 'numbuff' */
   addsize(buff, len);
 }
 

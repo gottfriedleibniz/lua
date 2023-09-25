@@ -33,18 +33,29 @@ enum RESERVED {
   /* terminal symbols denoted by reserved words */
   TK_AND = FIRST_RESERVED, TK_BREAK,
   TK_DO, TK_ELSE, TK_ELSEIF, TK_END, TK_FALSE, TK_FOR, TK_FUNCTION,
-  TK_GOTO, TK_IF, TK_IN, TK_LOCAL, TK_NIL, TK_NOT, TK_OR, TK_REPEAT,
+  TK_GOTO, TK_IF, TK_IN, TK_LOCAL,
+#if defined(LUA_EXT_DEFER)
+  TK_DEFER,
+#endif
+  TK_NIL, TK_NOT, TK_OR, TK_REPEAT,
   TK_RETURN, TK_THEN, TK_TRUE, TK_UNTIL, TK_WHILE,
   /* other terminal symbols */
   TK_IDIV, TK_CONCAT, TK_DOTS, TK_EQ, TK_GE, TK_LE, TK_NE,
   TK_SHL, TK_SHR,
   TK_DBCOLON, TK_EOS,
   TK_FLT, TK_INT, TK_NAME, TK_STRING
+#if defined(LUA_EXT_COMPOUND)
+  , TK_PLUSEQ, TK_MINUSEQ, TK_MULTEQ, TK_DIVEQ, TK_IDIVEQ, TK_MODEQ, TK_SHLEQ
+  , TK_SHREQ, TK_BANDEQ, TK_BOREQ, TK_POWEQ, TK_CONCATEQ
+#endif
 };
 
 /* number of reserved words */
 #define NUM_RESERVED	(cast_int(TK_WHILE-FIRST_RESERVED + 1))
 
+#if defined(LUA_EXT_COMPOUND)  /* ORDER RESERVED */
+#define opeqexpr(t) ((t) >= TK_PLUSEQ && (t) <= TK_CONCATEQ)
+#endif
 
 typedef union {
   lua_Number r;

@@ -407,7 +407,8 @@ static int handle_luainit (lua_State *L) {
 */
 #if !defined(lua_stdin_is_tty)	/* { */
 
-#if defined(LUA_USE_POSIX)	/* { */
+/* @LuaExt: cygwin/mingw: avoid console API changes */
+#if defined(LUA_USE_POSIX) || defined(__CYGWIN__)	/* { */
 
 #include <unistd.h>
 #define lua_stdin_is_tty()	isatty(0)
@@ -418,6 +419,10 @@ static int handle_luainit (lua_State *L) {
 #include <windows.h>
 
 #define lua_stdin_is_tty()	_isatty(_fileno(stdin))
+static BOOL WINAPI lctrl_handler (DWORD code) {
+  ((void)code);
+  return TRUE;
+}
 
 #else				/* }{ */
 
@@ -428,6 +433,27 @@ static int handle_luainit (lua_State *L) {
 
 #endif				/* } */
 
+
+#if defined(LUA_EXT_READLINE_HISTORY)
+/*
+@@ LUA_HISTORY the name of the environment variable that Lua checks to load its
+** REPL history.
+*/
+#if !defined(LUA_HISTORY)
+  #define LUA_HISTORY "LUA_HISTORY"
+#endif
+
+/*
+@@ LUA_HISTORY_DEFAULT default path that Lua uses to look for the REPL history.
+*/
+#if !defined(LUA_HISTORY_DEFAULT)
+#if defined(_WIN32)
+  #define LUA_HISTORY_DEFAULT "lua_history.txt"
+#else
+  #define LUA_HISTORY_DEFAULT ".lua_history"
+#endif
+#endif
+#endif
 
 /*
 ** lua_readline defines how to show a prompt and then read a line from
@@ -441,10 +467,13 @@ static int handle_luainit (lua_State *L) {
 
 #include <readline/readline.h>
 #include <readline/history.h>
-#define lua_initreadline(L)	((void)L, rl_readline_name="lua")
+/* @LuaExt: avoid potential -Wwritable-strings warning */
+#define lua_initreadline(L)	((void)L, rl_readline_name=(char*)"lua")
 #define lua_readline(L,b,p)	((void)L, ((b)=readline(p)) != NULL)
 #define lua_saveline(L,line)	((void)L, add_history(line))
 #define lua_freeline(L,b)	((void)L, free(b))
+#define lua_readhistory(L,f)	((void)L, (void)read_history(f))
+#define lua_writehistory(L,f)	((void)L, (void)write_history(f))
 
 #else				/* }{ */
 
@@ -454,6 +483,8 @@ static int handle_luainit (lua_State *L) {
         fgets(b, LUA_MAXINPUT, stdin) != NULL)  /* get line */
 #define lua_saveline(L,line)	{ (void)L; (void)line; }
 #define lua_freeline(L,b)	{ (void)L; (void)b; }
+#define lua_readhistory(L,f)	{ (void)L; (void)f; }
+#define lua_writehistory(L,f)	{ (void)L; (void)f; }
 
 #endif				/* } */
 
@@ -602,6 +633,18 @@ static void l_print (lua_State *L) {
 static void doREPL (lua_State *L) {
   int status;
   const char *oldprogname = progname;
+#if defined(LUA_EXT_READLINE_HISTORY)
+  const char *history_path = getenv(LUA_HISTORY);
+  if (history_path == NULL)  /* no environment variable? */
+    history_path = LUA_HISTORY_DEFAULT;  /* use default */
+  lua_readhistory(L, history_path);
+#endif
+#if defined(LUA_USE_WINDOWS) && !(defined(LUA_USE_POSIX) || defined(__CYGWIN__))
+  if (!SetConsoleCtrlHandler(lctrl_handler, TRUE)) {
+    l_message(progname, "setting control handler failed");
+    return;
+  }
+#endif
   progname = NULL;  /* no 'progname' on errors in interactive mode */
   lua_initreadline(L);
   while ((status = loadline(L)) != -1) {
@@ -612,6 +655,9 @@ static void doREPL (lua_State *L) {
   }
   lua_settop(L, 0);  /* clear stack */
   lua_writeline();
+#if defined(LUA_EXT_READLINE_HISTORY)
+  lua_writehistory(L, history_path);
+#endif
   progname = oldprogname;
 }
 

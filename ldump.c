@@ -20,6 +20,17 @@
 #include "lundump.h"
 
 
+#if defined(LUA_NO_DUMP)
+int luaU_dump(lua_State *L, const Proto *f, lua_Writer w, void *data, int strip) {
+  UNUSED(f);
+  UNUSED(w);
+  UNUSED(data);
+  UNUSED(strip);
+  lua_pushliteral(L, "dumper not available");
+  lua_error(L);
+  return 0;
+}
+#else
 typedef struct {
   lua_State *L;
   lua_Writer writer;
@@ -79,6 +90,15 @@ static void dumpInt (DumpState *D, int x) {
 }
 
 
+#if defined(LUA_EXT_FAT_TYPES)  /* make tag compatible w/ default types */
+static void dumpTag(DumpState *D, lu_tag y) {
+  int t = (y & BITS_TAG);
+  int v = ((y & BITS_VARIANT) >> VARIANT_OFFSET);
+  dumpByte(D, t | (v << 4));
+}
+#endif
+
+
 static void dumpNumber (DumpState *D, lua_Number x) {
   dumpVar(D, x);
 }
@@ -116,7 +136,11 @@ static void dumpConstants (DumpState *D, const Proto *f) {
   for (i = 0; i < n; i++) {
     const TValue *o = &f->k[i];
     int tt = ttypetag(o);
+#if defined(LUA_EXT_FAT_TYPES)
+    dumpTag(D, tt);
+#else
     dumpByte(D, tt);
+#endif
     switch (tt) {
       case LUA_VNUMFLT:
         dumpNumber(D, fltvalue(o));
@@ -227,4 +251,5 @@ int luaU_dump(lua_State *L, const Proto *f, lua_Writer w, void *data,
   dumpFunction(&D, f, NULL);
   return D.status;
 }
+#endif
 

@@ -235,7 +235,7 @@ a,b,c = 1,2,3
 a,b,c = nil
 
 
--- next uses always the same iteraction function
+-- next uses always the same iteration function
 assert(next{} == next{})
 
 local function find (name)
@@ -819,7 +819,7 @@ do
   co()     -- start coroutine
   co(1)    -- continue after yield
   assert(res[1] == 30 and res[2] == 20 and res[3] == 10 and #res == 3)
-  
+
 end
 
 print"OK"

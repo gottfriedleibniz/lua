@@ -25,6 +25,15 @@
 #include "lzio.h"
 
 
+#if defined(LUA_NO_BYTECODE)
+LClosure *luaU_undump(lua_State *L, ZIO *Z, const char *name) {
+  UNUSED(Z);
+  UNUSED(name);
+  lua_pushliteral(L, "binary loader not available");
+  lua_error(L);
+  return NULL;
+}
+#else
 #if !defined(luai_verifycode)
 #define luai_verifycode(L,f)  /* empty */
 #endif
@@ -88,6 +97,16 @@ static size_t loadSize (LoadState *S) {
 static int loadInt (LoadState *S) {
   return cast_int(loadUnsigned(S, INT_MAX));
 }
+
+
+#if defined(LUA_EXT_FAT_TYPES)
+static int loadTag (LoadState *S) {
+  int tag = loadByte(S);
+  int t = tag & 0x0F;  /* actual tag */
+  int v = (tag & 0x30) >> 4;  /* variant bits */
+  return makevariant(t, v);
+}
+#endif
 
 
 static lua_Number loadNumber (LoadState *S) {
@@ -161,7 +180,11 @@ static void loadConstants (LoadState *S, Proto *f) {
     setnilvalue(&f->k[i]);
   for (i = 0; i < n; i++) {
     TValue *o = &f->k[i];
+#if defined(LUA_EXT_FAT_TYPES)
+    lu_tag t = loadTag(S);
+#else
     int t = loadByte(S);
+#endif
     switch (t) {
       case LUA_VNIL:
         setnilvalue(o);
@@ -332,4 +355,5 @@ LClosure *luaU_undump(lua_State *L, ZIO *Z, const char *name) {
   luai_verifycode(L, cl->p);
   return cl;
 }
+#endif
 

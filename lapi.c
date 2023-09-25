@@ -275,6 +275,44 @@ LUA_API void lua_pushvalue (lua_State *L, int idx) {
 }
 
 
+#if defined (LUA_EXT_API)
+LUA_API void lua_insert (lua_State *L, int idx) {
+  StkId p, t;
+  TValue temp;
+  lua_lock(L);
+  p = index2stack(L, idx);  /* start of segment */
+  setobj(L, &temp, s2v(L->top.p - 1));
+  for (t = L->top.p - 1; t > p; --t) {  /* end of stack segment being rotated */
+    setobjs2s(L, t, t - 1);
+  }
+  setobj2s(L, p, &temp);
+  lua_unlock(L);
+}
+
+LUA_API void lua_remove (lua_State *L, int idx) {
+  StkId p, t;
+  lua_lock(L);
+  t = L->top.p - 1;  /* end of stack segment being rotated */
+  for (p = index2stack(L, idx); p < t; ++p) {  /* start of segment */
+    setobjs2s(L, p, p + 1);
+  }
+  L->top.p--;
+  lua_unlock(L);
+}
+
+LUA_API void lua_replace (lua_State *L, int toidx) {
+  TValue *fr, *to;
+  lua_lock(L);
+  fr = index2value(L, -1);
+  to = index2value(L, toidx);
+  api_check(L, isvalid(L, to), "invalid index");
+  setobj(L, to, fr);
+  if (isupvalue(toidx))  /* function upvalue? */
+    luaC_barrier(L, clCvalue(s2v(L->ci->func.p)), fr);
+  L->top.p--;
+  lua_unlock(L);
+}
+#endif
 
 /*
 ** access functions (stack -> C)
@@ -429,7 +467,7 @@ LUA_API lua_Unsigned lua_rawlen (lua_State *L, int idx) {
     case LUA_VSHRSTR: return tsvalue(o)->shrlen;
     case LUA_VLNGSTR: return tsvalue(o)->u.lnglen;
     case LUA_VUSERDATA: return uvalue(o)->len;
-    case LUA_VTABLE: return luaH_getn(hvalue(o));
+    case LUA_VTABLE: return luaH_getn(hvalue(o));  /* @LuaExt: lock/unlock? */
     default: return 0;
   }
 }
@@ -761,6 +799,7 @@ LUA_API int lua_rawgetp (lua_State *L, int idx, const void *p) {
 
 LUA_API void lua_createtable (lua_State *L, int narray, int nrec) {
   Table *t;
+  lua_assert(narray >= 0 && nrec >= 0);  /* @LuaExt: sanitize s2u cast */
   lua_lock(L);
   t = luaH_new(L);
   sethvalue2s(L, L->top.p, t);
@@ -770,6 +809,112 @@ LUA_API void lua_createtable (lua_State *L, int narray, int nrec) {
   luaC_checkGC(L);
   lua_unlock(L);
 }
+
+
+#if defined(LUA_EXT_READONLY)
+/*
+** @NOTE: Deviation from manual/manual.of:
+**  lua_setmetatable: @apii{1,0,-} to @apii{1,0,v}
+**  lua_rawset: @apii{2,0,m} to @apii{2,0,v}
+**  lua_rawsetp, lua_rawseti: @apii{1,0,m} to @apii{1,0,v}
+*/
+#define readonly_api_check(L, T)                         \
+  if (l_unlikely(isreadonly(T))) luaG_readonlyerror((L)) \
+
+LUA_API int lua_isreadonly (lua_State *L, int idx) {
+  int readonly;
+  const TValue *o;
+  lua_lock(L);
+  o = index2value(L, idx);
+  readonly = ttistable(o) && isreadonly(hvalue(o));
+  lua_unlock(L);
+  return readonly;
+}
+
+LUA_API void lua_setreadonly (lua_State *L, int idx, int value) {
+  Table *t;
+  lua_lock(L);
+  if ((t = gettable(L, idx)) != NULL) {
+    api_check(L, t != hvalue(&G(L)->l_registry), "freezing registry");
+    luaH_setreadonly(t, value);
+  }
+  lua_unlock(L);
+}
+#else
+  #define readonly_api_check(L, T)
+#endif
+
+
+#if defined(LUA_EXT_API)
+LUA_API int lua_tabletype (lua_State *L, int idx) {
+  Table *t;
+  int type = -1;
+  lua_lock(L);
+  if ((t = gettable(L, idx)) != NULL)
+    type = luaH_type(t);
+  lua_unlock(L);
+  return type;
+}
+
+LUA_API void lua_filltable (lua_State *L, int narr, int fillidx) {
+  int i;
+  Table *t; TValue *v;
+  lua_assert(narr >= 0);
+  lua_lock(L);
+  t = luaH_new(L);  /* Create table */
+  sethvalue2s(L, L->top.p, t);
+  api_incr_top(L);
+  luaH_resize(L, t, (unsigned int)narr, 0);
+  v = index2value(L, fillidx);  /* Copy elements; v may reference t */
+  for (i = 0; i < narr; ++i) {
+    setobj2t(L, &t->array[i], v); }
+  luaC_checkGC(L);
+  lua_unlock(L);
+}
+
+LUA_API void lua_rehashtable (lua_State *L, int idx) {
+  Table *t;
+  lua_lock(L);
+  if ((t = gettable(L, idx)) != NULL) {
+    readonly_api_check(L, t);
+    luaH_rehash(L, t);
+  }
+  lua_unlock(L);
+}
+
+LUA_API void lua_cleartable (lua_State *L, int idx) {
+  Table *t;
+  lua_lock(L);
+  if ((t = gettable(L, idx)) != NULL) {
+    readonly_api_check(L, t);
+    luaH_clear(L, t);
+  }
+  lua_unlock(L);
+}
+
+LUA_API void lua_compacttable (lua_State *L, int idx) {
+  Table *t;
+  lua_lock(L);
+  if ((t = gettable(L, idx)) != NULL) {
+    readonly_api_check(L, t);
+    luaH_compact(L, t);
+  }
+  lua_unlock(L);
+}
+
+LUA_API void lua_clonetable (lua_State *L, int fromidx, int toidx) {
+  Table *from, *to;
+  lua_lock(L);
+  from = gettable(L, fromidx);
+  to = gettable(L, toidx);
+  if (from != NULL && to != NULL) {
+    readonly_api_check(L, to);
+    luaH_clone(L, from, to);
+    luaC_checkGC(L);
+  }
+  lua_unlock(L);
+}
+#endif
 
 
 LUA_API int lua_getmetatable (lua_State *L, int objindex) {
@@ -831,6 +976,7 @@ static void auxsetstr (lua_State *L, const TValue *t, const char *k) {
   TString *str = luaS_new(L, k);
   api_checknelems(L, 1);
   if (luaV_fastget(L, t, str, slot, luaH_getstr)) {
+    readonly_api_check(L, hvalue(t));
     luaV_finishfastset(L, t, slot, s2v(L->top.p - 1));
     L->top.p--;  /* pop value */
   }
@@ -859,6 +1005,7 @@ LUA_API void lua_settable (lua_State *L, int idx) {
   api_checknelems(L, 2);
   t = index2value(L, idx);
   if (luaV_fastget(L, t, s2v(L->top.p - 2), slot, luaH_get)) {
+    readonly_api_check(L, hvalue(t));
     luaV_finishfastset(L, t, slot, s2v(L->top.p - 1));
   }
   else
@@ -881,6 +1028,7 @@ LUA_API void lua_seti (lua_State *L, int idx, lua_Integer n) {
   api_checknelems(L, 1);
   t = index2value(L, idx);
   if (luaV_fastgeti(L, t, n, slot)) {
+    readonly_api_check(L, hvalue(t));
     luaV_finishfastset(L, t, slot, s2v(L->top.p - 1));
   }
   else {
@@ -944,6 +1092,7 @@ LUA_API int lua_setmetatable (lua_State *L, int objindex) {
   }
   switch (ttype(obj)) {
     case LUA_TTABLE: {
+      readonly_api_check(L, hvalue(obj));
       hvalue(obj)->metatable = mt;
       if (mt) {
         luaC_objbarrier(L, gcvalue(obj), mt);
@@ -1340,6 +1489,37 @@ void lua_warning (lua_State *L, const char *msg, int tocont) {
 
 
 
+#if defined(LUA_EXT_USERTAG)
+static void *newutag (lua_State *L, size_t size, int tag, int nuvalue) {
+  Udata *u;
+  lua_lock(L);
+  api_check(L, 0 <= nuvalue && nuvalue < UCHAR_MAX, "invalid value");
+  u = luaS_newudatatag(L, size, nuvalue, tag);
+  setuvalue(L, s2v(L->top.p), u);
+  api_incr_top(L);
+  luaC_checkGC(L);
+  lua_unlock(L);
+  return getudatamem(u);
+}
+
+LUA_API void *lua_newuserdatauv (lua_State *L, size_t size, int nuvalue) {
+  return newutag(L, size, 0, nuvalue);
+}
+
+LUA_API void *lua_newusertaguv (lua_State *L, size_t size, int tag, int nuvalue) {
+#if USHRT_MAX != UINT_MAX
+  api_check(L, tag > 0 && tag <= (int)USHRT_MAX, "invalid tag");
+#endif
+  return newutag(L, size, tag, nuvalue);
+}
+
+LUA_API void *lua_tousertag (lua_State *L, int idx, int tag) {
+  const TValue *o = index2value(L, idx);
+  if (ttisfulluserdata(o) && uvalue(o)->tag == tag && tag != 0)
+    return getudatamem(uvalue(o));
+  return NULL;
+}
+#else
 LUA_API void *lua_newuserdatauv (lua_State *L, size_t size, int nuvalue) {
   Udata *u;
   lua_lock(L);
@@ -1351,6 +1531,7 @@ LUA_API void *lua_newuserdatauv (lua_State *L, size_t size, int nuvalue) {
   lua_unlock(L);
   return getudatamem(u);
 }
+#endif
 
 
 

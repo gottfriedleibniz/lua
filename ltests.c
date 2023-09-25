@@ -27,7 +27,6 @@
 #include "lfunc.h"
 #include "lmem.h"
 #include "lopcodes.h"
-#include "lopnames.h"
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
@@ -42,6 +41,11 @@
 
 
 void *l_Trick = 0;
+
+
+Memcontrol l_memcontrol =
+  {0, 0UL, 0UL, 0UL, 0UL, (~0UL),
+   {0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL}};
 
 
 #define obj_at(L,k)	s2v(L->ci->func.p + (k))
@@ -187,11 +191,6 @@ typedef union Header {
 #endif
 
 
-Memcontrol l_memcontrol =
-  {0, 0UL, 0UL, 0UL, 0UL, (~0UL),
-   {0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL}};
-
-
 static void freeblock (Memcontrol *mc, Header *block) {
   if (block) {
     size_t size = block->d.size;
@@ -216,7 +215,7 @@ void *debug_realloc (void *ud, void *b, size_t oldsize, size_t size) {
     mc->memlimit = limit ? strtoul(limit, NULL, 10) : ULONG_MAX;
   }
   if (block == NULL) {
-    type = (oldsize < LUA_NUMTAGS) ? oldsize : 0;
+    type = cast_int((oldsize < LUA_NUMTAGS) ? oldsize : 0);  /* @LuaExt: explicit cast */
     oldsize = 0;
   }
   else {
@@ -359,7 +358,7 @@ static void checkvalref (global_State *g, GCObject *f, const TValue *t) {
 static void checktable (global_State *g, Table *h) {
   unsigned int i;
   unsigned int asize = luaH_realasize(h);
-  Node *n, *limit = gnode(h, sizenode(h));
+  Node *n, *limit = gnode(h, sizenode_t(h));
   GCObject *hgc = obj2gco(h);
   checkobjrefN(g, hgc, h->metatable);
   for (i = 0; i < asize; i++)
@@ -561,7 +560,7 @@ static lu_mem checkgraylist (global_State *g, GCObject *o) {
 ** Check objects in gray lists.
 */
 static lu_mem checkgrays (global_State *g) {
-  int total = 0;  /* count number of elements in all lists */
+  lu_mem total = 0;  /* count number of elements in all lists; @LuaExt: fix type */
   if (!keepinvariant(g)) return total;
   total += checkgraylist(g, g->gray);
   total += checkgraylist(g, g->grayagain);
@@ -674,6 +673,12 @@ int lua_checkmemory (lua_State *L) {
 
 
 static char *buildop (Proto *p, int pc, char *buff) {
+#define opcode_name(X) #X,
+  static const char *const opnames[NUM_OPCODES + 1] = {
+    LUA_XOP(opcode_name)
+    NULL
+  };
+#undef opcode_name
   char *obuff = buff;
   Instruction i = p->code[pc];
   OpCode o = GET_OPCODE(i);
@@ -837,6 +842,12 @@ static int get_limits (lua_State *L) {
 
 static int mem_query (lua_State *L) {
   if (lua_isnone(L, 1)) {
+    /* @LuaExt: Sanitize query values */
+#if LUA_MAXINTEGER < SIZE_MAX
+    lua_assert(l_memcontrol.total <= LUA_MAXINTEGER);
+    lua_assert(l_memcontrol.numblocks <= LUA_MAXINTEGER);
+    lua_assert(l_memcontrol.maxmem <= LUA_MAXINTEGER);
+#endif
     lua_pushinteger(L, l_memcontrol.total);
     lua_pushinteger(L, l_memcontrol.numblocks);
     lua_pushinteger(L, l_memcontrol.maxmem);
@@ -864,9 +875,12 @@ static int mem_query (lua_State *L) {
 
 static int alloc_count (lua_State *L) {
   if (lua_isnone(L, 1))
-    l_memcontrol.countlimit = ~0L;
-  else
-    l_memcontrol.countlimit = luaL_checkinteger(L, 1);
+    l_memcontrol.countlimit = ~cast_sizet(0);
+  else {
+    lua_Integer i = luaL_checkinteger(L, 1);  /* @LuaExt: sanitize */
+    lua_assert(i >= 0);
+    l_memcontrol.countlimit = cast_sizet(i);
+  }
   return 0;
 }
 
@@ -984,7 +998,11 @@ static int stacklevel (lua_State *L) {
   lua_pushinteger(L, stacksize(L));
   lua_pushinteger(L, L->nCcalls);
   lua_pushinteger(L, L->nci);
+#if defined(LUA_USE_C89)
   lua_pushinteger(L, (unsigned long)&a);
+#else
+  lua_pushinteger(L, cast(lua_Integer, cast(intptr_t, &a)));  /* @LuaExt: changed pointer-casting */
+#endif
   return 5;
 }
 
@@ -1095,13 +1113,25 @@ static int upvalue (lua_State *L) {
 
 
 static int newuserdata (lua_State *L) {
+  char *p = NULL;  /* @LuaExt: sanitize nuv */
   size_t size = cast_sizet(luaL_optinteger(L, 1, 0));
-  int nuv = luaL_optinteger(L, 2, 0);
-  char *p = cast_charp(lua_newuserdatauv(L, size, nuv));
+  lua_Integer nuv = luaL_optinteger(L, 2, 0);
+  p = cast_charp(lua_newuserdatauv(L, size, cast_int(nuv)));
   while (size--) *p++ = '\0';
   return 1;
 }
 
+#if defined(LUA_EXT_USERTAG)
+static int newusertag (lua_State *L) {
+  char *p = NULL;
+  size_t size = cast_sizet(luaL_checkinteger(L, 1));
+  lua_Integer tag = luaL_checkinteger(L, 2);
+  lua_Integer nuv = luaL_optinteger(L, 3, 0);
+  p = cast_charp(lua_newusertaguv(L, size, cast_int(tag), cast_int(nuv)));
+  while (size--) *p++ = '\0';
+  return 1;
+}
+#endif
 
 static int pushuserdata (lua_State *L) {
   lua_Integer u = luaL_checkinteger(L, 1);
@@ -1111,7 +1141,11 @@ static int pushuserdata (lua_State *L) {
 
 
 static int udataval (lua_State *L) {
+#if defined(LUA_USE_C89)
   lua_pushinteger(L, cast(long, lua_touserdata(L, 1)));
+#else  /* @LuaExt: changed pointer-casting */
+  lua_pushinteger(L, cast(lua_Integer, cast(intptr_t, lua_touserdata(L, 1))));
+#endif
   return 1;
 }
 
@@ -1403,18 +1437,19 @@ static int runC (lua_State *L, lua_State *L1, const char *pc) {
     const char *inst = getstring;
     if EQ("") return 0;
     else if EQ("absindex") {
-      lua_pushnumber(L1, lua_absindex(L1, getindex));
+      lua_pushinteger(L1, cast(lua_Integer, lua_absindex(L1, getindex)));
     }
     else if EQ("append") {
       int t = getindex;
-      int i = lua_rawlen(L1, t);
-      lua_rawseti(L1, t, i + 1);
+      lua_Unsigned i = lua_rawlen(L1, t);  /* @LuaExt: correct typing */
+      lua_rawseti(L1, t, luaL_intop(+, i, 1));
     }
     else if EQ("arith") {
-      int op;
+      ptrdiff_t op;  /* @LuaExt: correct typing and sanitize cast */
       skip(&pc);
       op = strchr(ops, *pc++) - ops;
-      lua_arith(L1, op);
+      lua_assert(op >= INT_MIN && op <= INT_MAX);
+      lua_arith(L1, cast_int(op));
     }
     else if EQ("call") {
       int narg = getnum;
@@ -1455,7 +1490,11 @@ static int runC (lua_State *L, lua_State *L1, const char *pc) {
     }
     else if EQ("func2num") {
       lua_CFunction func = lua_tocfunction(L1, getindex);
+#if defined(LUA_USE_C89)
       lua_pushnumber(L1, cast_sizet(func));
+#else
+      lua_pushnumber(L1, cast_num(cast(intptr_t, func)));  /* @LuaExt: changed pointer-casting */
+#endif
     }
     else if EQ("getfield") {
       int t = getindex;
@@ -1538,6 +1577,16 @@ static int runC (lua_State *L, lua_State *L1, const char *pc) {
     else if EQ("newuserdata") {
       lua_newuserdata(L1, getnum);
     }
+#if defined(LUA_EXT_USERTAG)
+    else if EQ("nameusertag") {
+      int tag = getnum;
+      const char *name = getstring;
+      luaL_nameusertag(L, tag, name);
+    }
+    else if EQ("tousertag") {
+      lua_pushlightuserdata(L1, lua_tousertag(L1, getindex, getindex));
+    }
+#endif
     else if EQ("next") {
       lua_next(L1, -2);
     }
@@ -1638,6 +1687,31 @@ static int runC (lua_State *L, lua_State *L1, const char *pc) {
       int t = getindex;
       lua_rawsetp(L1, t, cast_voidp(cast_sizet(getnum)));
     }
+#if defined(LUA_EXT_READONLY)
+    else if EQ("isreadonly") {
+      lua_pushboolean(L1, lua_isreadonly(L1, getindex));
+    }
+    else if EQ("setreadonly") {
+      int t = getindex;
+      lua_setreadonly(L1, t, getnum);
+    }
+#endif
+#if defined(LUA_EXT_API)
+    else if EQ("cleartable") {
+      lua_cleartable(L1, getindex);
+    }
+    else if EQ("clonetable") {
+      int t = getindex;
+      lua_clonetable(L1, t, getindex);
+    }
+    else if EQ("tabletype") {
+      lua_tabletype(L1, getindex);
+    }
+    else if EQ("filltable") {
+      int narr = (int)getnum;  /* unsanitized */
+      lua_filltable(L1, narr, getindex);
+    }
+#endif
     else if EQ("remove") {
       lua_remove(L1, getnum);
     }
@@ -1810,7 +1884,8 @@ static int Cfunck (lua_State *L, int status, lua_KContext ctx) {
   lua_setglobal(L, "status");
   lua_pushinteger(L, ctx);
   lua_setglobal(L, "ctx");
-  return runC(L, L, lua_tostring(L, ctx));
+  lua_assert(ctx >= INT_MIN && ctx <= INT_MAX);  /* @LuaExt: sanitize and explicit cast */
+  return runC(L, L, lua_tostring(L, cast_int(ctx)));
 }
 
 
@@ -1930,6 +2005,9 @@ static const struct luaL_Reg tests_funcs[] = {
   {"checkpanic", checkpanic},
   {"newstate", newstate},
   {"newuserdata", newuserdata},
+#if defined(LUA_EXT_USERTAG)
+  {"newusertag", newusertag},
+#endif
   {"num2int", num2int},
   {"pushuserdata", pushuserdata},
   {"querystr", string_query},

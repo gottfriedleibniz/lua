@@ -79,6 +79,8 @@ function Message (m)
   end
 end
 
+-- @LuaExt: platform configuration
+os.platform = os.platform or "posix"
 assert(os.setlocale"C")
 
 local T,print,format,write,assert,type,unpack,floor =

@@ -22,6 +22,9 @@
 #define LUA_TUPVAL	LUA_NUMTYPES  /* upvalues */
 #define LUA_TPROTO	(LUA_NUMTYPES+1)  /* function prototypes */
 #define LUA_TDEADKEY	(LUA_NUMTYPES+2)  /* removed keys in tables */
+#if defined(LUA_EXT_ITERATION)
+#define LUA_TITER	(LUA_NUMTYPES+3)  /* iterator marker */
+#endif
 
 
 
@@ -38,10 +41,30 @@
 ** bit 6: whether value is collectable
 */
 
+#if defined(LUA_EXT_FAT_TYPES)	/* { */
+
+#if LUAI_IS32INT
+typedef int lu_tag;
+#else
+typedef long lu_tag;
+#endif
+#define BITS_TAG		0x000FF
+#define BITS_VARIANT		0x0FF00
+#define BIT_ISCOLLECTABLE	0x10000
+#define VARIANT_OFFSET		8
+
+#else				/* }{ */
+
+typedef lu_byte lu_tag;
+#define BITS_TAG		0x0F
+#define BITS_VARIANT		0x30
+#define BIT_ISCOLLECTABLE	0x40
+#define VARIANT_OFFSET		4
+
+#endif				/* } */
+
 /* add variant bits to a type */
-#define makevariant(t,v)	((t) | ((v) << 4))
-
-
+#define makevariant(t,v)	((t) | ((v) << VARIANT_OFFSET))
 
 /*
 ** Union of all Lua values
@@ -52,6 +75,9 @@ typedef union Value {
   lua_CFunction f; /* light C functions */
   lua_Integer i;   /* integer numbers */
   lua_Number n;    /* float numbers */
+#if defined(LUA_EXT_ITERATION)
+  unsigned int it; /* iterator index */
+#endif
   /* not used, but may avoid warnings for uninitialized value */
   lu_byte ub;
 } Value;
@@ -62,7 +88,7 @@ typedef union Value {
 ** an actual value plus a tag with its type.
 */
 
-#define TValuefields	Value value_; lu_byte tt_
+#define TValuefields	Value value_; lu_tag tt_
 
 typedef struct TValue {
   TValuefields;
@@ -76,11 +102,11 @@ typedef struct TValue {
 /* raw type tag of a TValue */
 #define rawtt(o)	((o)->tt_)
 
-/* tag with no variants (bits 0-3) */
-#define novariant(t)	((t) & 0x0F)
+/* tag with no variants */
+#define novariant(t)	((t) & BITS_TAG)
 
-/* type tag of a TValue (bits 0-3 for tags + variant bits 4-5) */
-#define withvariant(t)	((t) & 0x3F)
+/* type tag of a TValue */
+#define withvariant(t)	((t) & (BITS_TAG | BITS_VARIANT))
 #define ttypetag(o)	withvariant(rawtt(o))
 
 /* type of a TValue */
@@ -149,6 +175,9 @@ typedef union StackValue {
   TValue val;
   struct {
     TValuefields;
+#if defined(LUA_EXT_DEFER)
+    lu_byte deferred;
+#endif
     unsigned short delta;
   } tbclist;
 } StackValue;
@@ -285,17 +314,13 @@ typedef union {
 ** Common Header for all collectable objects (in macro form, to be
 ** included in other objects)
 */
-#define CommonHeader	struct GCObject *next; lu_byte tt; lu_byte marked
+#define CommonHeader	struct GCObject *next; lu_tag tt; lu_byte marked
 
 
 /* Common type for all collectable objects */
 typedef struct GCObject {
   CommonHeader;
 } GCObject;
-
-
-/* Bit mark for collectable types */
-#define BIT_ISCOLLECTABLE	(1 << 6)
 
 #define iscollectable(o)	(rawtt(o) & BIT_ISCOLLECTABLE)
 
@@ -458,7 +483,12 @@ typedef union UValue {
 */
 typedef struct Udata {
   CommonHeader;
+#if defined(LUA_EXT_USERTAG)
+  lu_byte nuvalue;  /* number of user values */
+  unsigned short tag;
+#else
   unsigned short nuvalue;  /* number of user values */
+#endif
   size_t len;  /* number of bytes */
   struct Table *metatable;
   GCObject *gclist;
@@ -477,7 +507,12 @@ typedef struct Udata {
 */
 typedef struct Udata0 {
   CommonHeader;
+#if defined(LUA_EXT_USERTAG)
+  lu_byte nuvalue;  /* number of user values */
+  unsigned short tag;
+#else
   unsigned short nuvalue;  /* number of user values */
+#endif
   size_t len;  /* number of bytes */
   struct Table *metatable;
   union {LUAI_MAXALIGN;} bindata;
@@ -699,7 +734,7 @@ typedef union Closure {
 typedef union Node {
   struct NodeKey {
     TValuefields;  /* fields for value */
-    lu_byte key_tt;  /* key type */
+    lu_tag key_tt;  /* key type */
     int next;  /* for chaining */
     Value key_val;  /* key value */
   } u;
@@ -733,6 +768,13 @@ typedef union Node {
 #define setrealasize(t)		((t)->flags &= cast_byte(~BITRAS))
 #define setnorealasize(t)	((t)->flags |= BITRAS)
 
+/* Use the remaining 'flags' bit for the extended read-only property. */
+#if defined(LUA_EXT_READONLY)
+#define BITRONLY		(1 << 6)
+#define isreadonly(t)		((t)->flags & BITRONLY)
+#define setreadonly(t)		((t)->flags |= BITRONLY)
+#define setnotreadonly(t)	((t)->flags &= cast_byte(~BITRONLY))
+#endif
 
 typedef struct Table {
   CommonHeader;
@@ -753,13 +795,13 @@ typedef struct Table {
 #define keytt(node)		((node)->u.key_tt)
 #define keyval(node)		((node)->u.key_val)
 
-#define keyisnil(node)		(keytt(node) == LUA_TNIL)
+#define keyisnil(node)		(keytt(node) == LUA_VNIL) /* @LuaExt: LUA_TNIL */
 #define keyisinteger(node)	(keytt(node) == LUA_VNUMINT)
 #define keyival(node)		(keyval(node).i)
 #define keyisshrstr(node)	(keytt(node) == ctb(LUA_VSHRSTR))
 #define keystrval(node)		(gco2ts(keyval(node).gc))
 
-#define setnilkey(node)		(keytt(node) = LUA_TNIL)
+#define setnilkey(node)		(keytt(node) = LUA_VNIL) /* @LuaExt: LUA_TNIL */
 
 #define keyiscollectable(n)	(keytt(n) & BIT_ISCOLLECTABLE)
 
@@ -778,6 +820,27 @@ typedef struct Table {
 
 /* }================================================================== */
 
+#if defined(LUA_EXT_ITERATION)
+#define LUA_VPAIRS makevariant(LUA_TITER, 0)
+#define LUA_VIPAIRS makevariant(LUA_TITER, 1)
+
+#define ttisitern(o) checktype((o), LUA_TITER)
+#define ttispairs(o) checktag((o), LUA_VPAIRS)
+#define ttisipairs(o) checktag((o), LUA_VIPAIRS)
+
+#define parisv(o) check_exp(ttisitern(o), val_(o).it)
+#define chgpairsv(obj, x) val_(obj).it = (x)
+#define setpairsv(obj, x) setintern(obj, x, LUA_VPAIRS)
+#define setipairsv(obj, x) setintern(obj, x, LUA_VIPAIRS)
+#define setintern(obj, x, tag) \
+  LUA_MLM_BEGIN                \
+  TValue *io = (obj);          \
+  val_(io).it = (x);           \
+  settt_(io, tag);             \
+  LUA_MLM_END
+#endif
+
+/* }================================================================== */
 
 
 /*
@@ -789,6 +852,12 @@ typedef struct Table {
 
 #define twoto(x)	(1<<(x))
 #define sizenode(t)	(twoto((t)->lsizenode))
+#if defined(_MSC_VER) && _MSC_VER >= 1920 && defined(__cplusplus)
+  /* @LuaExt: suppress http://lua-users.org/lists/lua-l/2010-10/msg00703.html */
+  #define sizenode_t(t) _Pragma("warning(suppress:4334)") cast_sizet(sizenode(t))
+#else
+  #define sizenode_t(t) cast_sizet(sizenode(t))
+#endif
 
 
 /* size of buffer for 'luaO_utf8esc' function */
@@ -808,6 +877,8 @@ LUAI_FUNC const char *luaO_pushvfstring (lua_State *L, const char *fmt,
 LUAI_FUNC const char *luaO_pushfstring (lua_State *L, const char *fmt, ...);
 LUAI_FUNC void luaO_chunkid (char *out, const char *source, size_t srclen);
 
+/* @LuaExt: avoid luaO_pushvfstring */
+LUAI_FUNC int luaO_tostringbuff (const TValue *obj, char *buff);
 
 #endif
 

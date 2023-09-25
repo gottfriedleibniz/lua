@@ -19,6 +19,18 @@
 #define LUA_DEBUG
 
 
+/* @LuaExt: debug module exports */
+#if defined(LUA_BUILD_AS_DLL)
+#if defined(ltests_c)
+  #define LUA_DAPI extern __declspec(dllexport)
+#else
+  #define LUA_DAPI extern __declspec(dllimport)
+#endif
+#else
+  #define LUA_DAPI extern
+#endif
+
+
 /* turn on assertions */
 #define LUAI_ASSERT
 
@@ -47,21 +59,21 @@
 /* memory-allocator control variables */
 typedef struct Memcontrol {
   int failnext;
-  unsigned long numblocks;
-  unsigned long total;
-  unsigned long maxmem;
-  unsigned long memlimit;
-  unsigned long countlimit;
-  unsigned long objcount[LUA_NUMTYPES];
+  size_t numblocks;  /* @LuaExt: unsigned long -> size_t */
+  size_t total;
+  size_t maxmem;  /* @LuaExt: lu_mem */
+  size_t memlimit;  /* @LuaExt: lu_mem */
+  size_t countlimit;
+  size_t objcount[LUA_NUMTYPES];
 } Memcontrol;
 
-LUA_API Memcontrol l_memcontrol;
+LUA_DAPI Memcontrol l_memcontrol;
 
 
 /*
 ** generic variable for debug tricks
 */
-extern void *l_Trick;
+LUA_DAPI void *l_Trick;
 
 
 

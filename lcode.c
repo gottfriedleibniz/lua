@@ -722,6 +722,15 @@ void luaK_setreturns (FuncState *fs, expdesc *e, int nresults) {
   Instruction *pc = &getinstruction(fs, e);
   if (e->k == VCALL)  /* expression is an open function call? */
     SETARG_C(*pc, nresults + 1);
+#if defined(LUA_EXT_SAFENAV)
+  else if (e->k == VSCALL) {  /* expression is a open function safenav call? */
+    Instruction *loadnil = pc + 2;
+    lua_assert(GET_OPCODE(*loadnil) == OP_LOADNIL);
+    lua_assert(GETARG_A(*loadnil) == GETARG_A(*pc));
+    SETARG_C(*pc, nresults + 1);
+    SETARG_B(*loadnil, nresults - 1);
+  }
+#endif
   else {
     lua_assert(e->k == VVARARG);
     SETARG_C(*pc, nresults + 1);
@@ -752,7 +761,7 @@ static void str2K (FuncState *fs, expdesc *e) {
 ** to be fixed.)
 */
 void luaK_setoneret (FuncState *fs, expdesc *e) {
-  if (e->k == VCALL) {  /* expression is an open function call? */
+  if (vkiscall(e->k)) {  /* expression is an open function call? */
     /* already returns 1 value */
     lua_assert(GETARG_C(getinstruction(fs, e)) == 2);
     e->k = VNONRELOC;  /* result has fixed position */
@@ -776,7 +785,18 @@ void luaK_dischargevars (FuncState *fs, expdesc *e) {
       break;
     }
     case VLOCAL: {  /* already in a register */
+      /*
+      ** @NVC: will discard e->u.info = e->u.var.ridx:
+      **   13df: ... ; switch jump
+      **   13e6: 41 c7 06 08 00 00 00    movl   $0x8,(%r14)
+      **   13ed: e9 8e 02 00 00          jmp    1680 <luaK_dischargevars+0x2c0>
+      */
+#if defined(__NVCOMPILER)
+      volatile lu_byte ridx = e->u.var.ridx;
+      e->u.info = cast_int(ridx);
+#else
       e->u.info = e->u.var.ridx;
+#endif
       e->k = VNONRELOC;  /* becomes a non-relocatable value */
       break;
     }
@@ -808,6 +828,9 @@ void luaK_dischargevars (FuncState *fs, expdesc *e) {
       e->k = VRELOC;
       break;
     }
+#if defined(LUA_EXT_SAFENAV)
+    case VSCALL:
+#endif
     case VVARARG: case VCALL: {
       luaK_setoneret(fs, e);
       break;
@@ -946,6 +969,13 @@ void luaK_exp2nextreg (FuncState *fs, expdesc *e) {
   exp2reg(fs, e, fs->freereg - 1);
 }
 
+#if defined(LUA_EXT_IFEXPR)
+void luaK_exp2reg (FuncState *fs, expdesc *e, int reg) {
+  luaK_dischargevars(fs, e);
+  freeexp(fs, e);
+  exp2reg(fs, e, reg);
+}
+#endif
 
 /*
 ** Ensures final expression result is in some (any) register
@@ -1336,7 +1366,10 @@ static int constfolding (FuncState *fs, int op, expdesc *e1,
   TValue v1, v2, res;
   if (!tonumeral(e1, &v1) || !tonumeral(e2, &v2) || !validop(op, &v1, &v2))
     return 0;  /* non-numeric operands or not safe to fold */
-  luaO_rawarith(fs->ls->L, op, &v1, &v2, &res);  /* does operation */
+  /* @LuaExt: suppress warnings during unity building. validop ensures
+  ** luaO_rawarith will be successful. Sanitize anyway. */
+  if (!luaO_rawarith(fs->ls->L, op, &v1, &v2, &res))  /* does operation */
+    return 0;
   if (ttisinteger(&res)) {
     e1->k = VKINT;
     e1->u.ival = ivalue(&res);

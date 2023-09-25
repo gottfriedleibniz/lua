@@ -79,7 +79,15 @@ assert(not io.open(file))
 io.output(file)
 assert(io.output() ~= io.stdout)
 
-if not _port then   -- invalid seek
+if _port then   -- invalid seek
+  -- Skip
+elseif os.platform == "win32"
+  or os.platform == "darwin"
+  or os.platform == "wasm"
+  or os.platform:find("bsd") then
+  local status, msg, code = io.stdin:seek("set", 1000)
+  assert(status and not msg and not code)
+else
   local status, msg, code = io.stdin:seek("set", 1000)
   assert(not status and type(msg) == "string" and type(code) == "number")
 end
@@ -714,14 +722,56 @@ if not _soft then
   x = nil; y = nil
 end
 
-if not _port then
-  local progname
-  do  -- get name of running executable
-    local arg = arg or ARG
-    local i = 0
-    while arg[i] do i = i - 1 end
-    progname = '"' .. arg[i + 1] .. '"'
+local progname
+do  -- get name of running executable
+  local arg = arg or ARG
+  local i = 0
+  while arg[i] do i = i - 1 end
+  progname = '"' .. arg[i + 1] .. '"'
+end
+
+if _port or os.platform == "wasm" then
+  -- Skip
+elseif os.platform == "win32" then
+  print("testing popen/pclose and execute")
+  -- invalid mode for popen
+  checkerr("invalid mode", io.popen, "echo", "")
+  checkerr("invalid mode", io.popen, "echo", "r+")
+  checkerr("invalid mode", io.popen, "echo", "rw")
+  do  -- basic tests for popen
+    local file = os.tmpname()
+    local f = assert(io.popen("findstr \"^\" > " .. file, "w"))
+    f:write("a line")
+    assert(f:close())
+
+    local f = assert(io.popen("@echo off&&type " .. file, "r"))
+    assert(f:read("a") == "a line\n")
+    assert(f:close())
+    assert(os.remove(file))
   end
+
+  local tests = {
+    -- command,   what,  code
+    {"not-to-be-found-command", "exit"},
+    {"exit 3", "exit", 3},
+    {"exit 129", "exit", 129},
+    {progname .. ' -e os.exit(0,true)', "ok"},
+    {progname .. ' -e os.exit(20,true)', "exit", 20},
+  }
+  print("\n(some error messages are expected now)")
+  for _, v in ipairs(tests) do
+    local x, y, z = io.popen(v[1]):close()
+    local x1, y1, z1 = os.execute(v[1])
+    assert(x == x1 and y == y1 and z == z1)
+    if v[2] == "ok" then
+      assert(x and y == 'exit' and z == 0)
+    else
+      assert(not x and y == v[2])   -- correct status and 'what'
+      -- correct code if known (but always different from 0)
+      assert((v[3] == nil and z > 0) or v[3] == z)
+    end
+  end
+else
   print("testing popen/pclose and execute")
   -- invalid mode for popen
   checkerr("invalid mode", io.popen, "cat", "")
@@ -746,7 +796,7 @@ if not _port then
     {"exit 129", "exit", 129},
     {"kill -s HUP $$", "signal", 1},
     {"kill -s KILL $$", "signal", 9},
-    {"sh -c 'kill -s HUP $$'", "exit"},
+    {":|sh -c 'kill -s HUP $$'", "exit"}, -- @LuaExt: cross-platform(ish)
     {progname .. ' -e " "', "ok"},
     {progname .. ' -e "os.exit(0, true)"', "ok"},
     {progname .. ' -e "os.exit(20, true)"', "exit", 20},
@@ -808,7 +858,9 @@ if not _port then
   checkDateTable(1)
   checkDateTable(1000)
   checkDateTable(0x7fffffff)
-  checkDateTable(0x80000000)
+  if os.platform ~= "wasm" then
+    checkDateTable(0x80000000)
+  end
 end
 
 checkerr("invalid conversion specifier", os.date, "%")
@@ -838,7 +890,20 @@ if string.packsize("i") == 4 then   -- 4-byte ints
 end
 
 
-if not _port then
+if _port then
+  -- Skip
+elseif os.platform == "wasm"
+    or os.platform == "win32"
+    or os.platform == "msys"
+    or os.platform == "cygwin" then
+  local t0 = os.time{year = 1970, month = 1, day = 1}
+  local t1 = os.time{year = 1970, month = 1, day = 1, sec = (1 << 31) - 1}
+  assert(t1 - t0 == (1 << 31) - 1)
+
+  t0 = os.time{year = 1970, month = 1, day = 1}
+  t1 = os.time{year = 1970, month = 1, day = 1, sec = -(1 << 15)}
+  assert(t1 - t0 == -(1 << 15))
+else
   -- test Posix-specific modifiers
   assert(type(os.date("%Ex")) == 'string')
   assert(type(os.date("%Oy")) == 'string')
@@ -850,7 +915,11 @@ if not _port then
   t0 = os.time{year = 1970, month = 1, day = 1}
   t1 = os.time{year = 1970, month = 1, day = 1, sec = -(1 << 31)}
   assert(t1 - t0 == -(1 << 31))
+end
 
+if _port or os.platform == "wasm" then
+  -- Skip
+else
   -- test out-of-range dates (at least for Unix)
   if maxint >= 2^62 then  -- cannot do these tests in Small Lua
     -- no arith overflows
@@ -866,12 +935,24 @@ if not _port then
         checkerr("cannot be represented", os.date, "%Y", 2^60)
 
         -- this is the maximum year
-        assert(tonumber(os.time
-          {year=(1 << 31) + 1899, month=12, day=31, hour=23, min=59, sec=59}))
+        if os.platform == "win32" then
+          assert(tonumber(os.time
+            {year=3000, month=12, day=31, hour=23, min=59, sec=59}))
+        else
+          assert(tonumber(os.time
+            {year=(1 << 31) + 1899, month=12, day=31, hour=23, min=59, sec=59}))
+        end
 
         -- this is too much
-        checkerr("represented", os.time,
-          {year=(1 << 31) + 1899, month=12, day=31, hour=23, min=59, sec=60})
+        if os.platform == "msys" or os.platform == "cygwin" then
+          -- @TODO
+        elseif os.platform == "win32" then
+          checkerr("represented", os.time,
+            {year=3001, month=12, day=31, hour=23, min=59, sec=60})
+        else
+          checkerr("represented", os.time,
+            {year=(1 << 31) + 1899, month=12, day=31, hour=23, min=59, sec=60})
+        end
       end
 
       -- internal 'int' fields cannot hold these values

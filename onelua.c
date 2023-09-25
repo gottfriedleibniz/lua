@@ -66,7 +66,7 @@
 #undef LUAI_FUNC
 #undef LUAI_DDEC
 #undef LUAI_DDEF
-#define LUAI_FUNC	static
+#define LUAI_FUNC	static inline
 #define LUAI_DDEC(def)	/* empty */
 #define LUAI_DDEF	static
 
@@ -95,9 +95,13 @@
 /* auxiliary library -- used by all */
 #include "lauxlib.c"
 
+/* @LuaExt: hack to link luaB_next and luaB_ipairsaux */
+#if !defined(MAKE_LUAC) || defined(LUA_EXT_ITERATION)
+#include "lbaselib.c"
+#endif
+
 /* standard library  -- not used by luac */
 #ifndef MAKE_LUAC
-#include "lbaselib.c"
 #include "lcorolib.c"
 #include "ldblib.c"
 #include "liolib.c"

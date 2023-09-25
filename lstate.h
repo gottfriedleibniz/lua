@@ -386,8 +386,10 @@ union GCUnion {
 /*
 ** macro to convert a Lua object into a GCObject
 ** (The access to 'tt' tries to ensure that 'v' is actually a Lua object.)
+** @LuaExt: remove variant bits from 'tt'
 */
-#define obj2gco(v)	check_exp((v)->tt >= LUA_TSTRING, &(cast_u(v)->gc))
+#define ttisgco(t)	(((t) >= LUA_TSTRING && (t) <= LUA_TPROTO))
+#define obj2gco(v)	check_exp(ttisgco(novariant((v)->tt)), &(cast_u(v)->gc))
 
 
 /* actual number of total bytes allocated */

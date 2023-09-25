@@ -51,8 +51,21 @@ LUAI_FUNC void luaH_resize (lua_State *L, Table *t, unsigned int nasize,
 LUAI_FUNC void luaH_resizearray (lua_State *L, Table *t, unsigned int nasize);
 LUAI_FUNC void luaH_free (lua_State *L, Table *t);
 LUAI_FUNC int luaH_next (lua_State *L, Table *t, StkId key);
+#if defined(LUA_EXT_ITERATION)
+LUAI_FUNC unsigned int luaH_rawnext (lua_State *L, Table *t, StkId v, unsigned int idx);
+#endif
 LUAI_FUNC lua_Unsigned luaH_getn (Table *t);
 LUAI_FUNC unsigned int luaH_realasize (const Table *t);
+#if defined(LUA_EXT_READONLY)
+LUAI_FUNC void luaH_setreadonly (Table *t, int readonly);
+#endif
+#if defined(LUA_EXT_API)
+LUAI_FUNC int luaH_type (const Table *t);
+LUAI_FUNC void luaH_clear (lua_State *L, Table *t);
+LUAI_FUNC void luaH_rehash (lua_State *L, Table *t);
+LUAI_FUNC void luaH_compact (lua_State *L, Table *t);
+LUAI_FUNC void luaH_clone (lua_State *L, const Table *t, Table *t2);
+#endif
 
 
 #if defined(LUA_DEBUG)

@@ -21,6 +21,7 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+#if !defined(LUA_SANDBOX_LIBS)
 
 
 
@@ -215,7 +216,7 @@ static int aux_close (lua_State *L) {
   LStream *p = tolstream(L);
   volatile lua_CFunction cf = p->closef;
   p->closef = NULL;  /* mark stream as closed */
-  return (*cf)(L);  /* close it */
+  return lua_cfunction_call(*cf, L);  /* close it */
 }
 
 
@@ -299,9 +300,16 @@ static int io_popen (lua_State *L) {
 
 
 static int io_tmpfile (lua_State *L) {
+#if defined(__wasi__)  /* @LuaExt: tmpfile is not defined on WASI */
+  luaL_pushfail(L);
+  lua_pushfstring(L, "not defined on WASI");
+  lua_pushinteger(L, -1);
+  return 3;
+#else
   LStream *p = newfile(L);
   p->f = tmpfile();
   return (p->f == NULL) ? luaL_fileresult(L, 0, NULL) : 1;
+#endif
 }
 
 
@@ -663,12 +671,20 @@ static int g_write (lua_State *L, FILE *f, int arg) {
   for (; nargs--; arg++) {
     if (lua_type(L, arg) == LUA_TNUMBER) {
       /* optimization: could be done exactly as for strings */
+#if defined(LUA_EXT_ITOA)  /* use available formatting macros */
+      char buff[64];  /* MAXNUMBER2STR */
+      int len = lua_isinteger(L, arg)
+                ? lua_integer2str(buff, sizeof(buff), lua_tointeger(L, arg))
+                : lua_number2str(buff, sizeof(buff), lua_tonumber(L, arg));
+      status = status && (len > 0) && fputs(buff, f) >= 0;
+#else
       int len = lua_isinteger(L, arg)
                 ? fprintf(f, LUA_INTEGER_FMT,
                              (LUAI_UACINT)lua_tointeger(L, arg))
                 : fprintf(f, LUA_NUMBER_FMT,
                              (LUAI_UACNUMBER)lua_tonumber(L, arg));
       status = status && (len > 0);
+#endif
     }
     else {
       size_t l;
@@ -787,6 +803,9 @@ static void createmeta (lua_State *L) {
   luaL_newlibtable(L, meth);  /* create method table */
   luaL_setfuncs(L, meth, 0);  /* add file methods to method table */
   lua_setfield(L, -2, "__index");  /* metatable.__index = method table */
+#if defined(LUA_EXT_READONLY)
+  lua_setreadonly(L, -1, 1);
+#endif
   lua_pop(L, 1);  /* pop metatable */
 }
 
@@ -814,15 +833,20 @@ static void createstdfile (lua_State *L, FILE *f, const char *k,
   }
   lua_setfield(L, -2, fname);  /* add file to module */
 }
+#endif
 
 
 LUAMOD_API int luaopen_io (lua_State *L) {
+#if defined(LUA_SANDBOX_LIBS)
+  lua_newtable(L);
+#else
   luaL_newlib(L, iolib);  /* new module */
   createmeta(L);
   /* create (and set) default files */
   createstdfile(L, stdin, IO_INPUT, "stdin");
   createstdfile(L, stdout, IO_OUTPUT, "stdout");
   createstdfile(L, stderr, NULL, "stderr");
+#endif
   return 1;
 }
 

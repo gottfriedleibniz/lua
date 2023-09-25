@@ -24,7 +24,9 @@
 ** The hook table at registry[HOOKKEY] maps threads to their current
 ** hook function.
 */
+#if !defined(LUA_SANDBOX_LIBS)
 static const char *const HOOKKEY = "_HOOKKEY";
+#endif
 
 
 /*
@@ -38,6 +40,7 @@ static void checkstack (lua_State *L, lua_State *L1, int n) {
 }
 
 
+#if !defined(LUA_SANDBOX_LIBS)
 static int db_getregistry (lua_State *L) {
   lua_pushvalue(L, LUA_REGISTRYINDEX);
   return 1;
@@ -83,6 +86,7 @@ static int db_setuservalue (lua_State *L) {
     luaL_pushfail(L);
   return 1;
 }
+#endif
 
 
 /*
@@ -200,6 +204,7 @@ static int db_getinfo (lua_State *L) {
 }
 
 
+#if !defined(LUA_SANDBOX_LIBS)
 static int db_getlocal (lua_State *L) {
   int arg;
   lua_State *L1 = getthread(L, &arg);
@@ -430,6 +435,7 @@ static int db_debug (lua_State *L) {
     lua_settop(L, 0);  /* remove eventual returns */
   }
 }
+#endif
 
 
 static int db_traceback (lua_State *L) {
@@ -446,19 +452,24 @@ static int db_traceback (lua_State *L) {
 }
 
 
+#if !defined(LUA_SANDBOX_LIBS)
 static int db_setcstacklimit (lua_State *L) {
   int limit = (int)luaL_checkinteger(L, 1);
   int res = lua_setcstacklimit(L, limit);
   lua_pushinteger(L, res);
   return 1;
 }
+#endif
 
 
 static const luaL_Reg dblib[] = {
+#if !defined(LUA_SANDBOX_LIBS)
   {"debug", db_debug},
   {"getuservalue", db_getuservalue},
   {"gethook", db_gethook},
+#endif
   {"getinfo", db_getinfo},
+#if !defined(LUA_SANDBOX_LIBS)
   {"getlocal", db_getlocal},
   {"getregistry", db_getregistry},
   {"getmetatable", db_getmetatable},
@@ -470,8 +481,11 @@ static const luaL_Reg dblib[] = {
   {"setlocal", db_setlocal},
   {"setmetatable", db_setmetatable},
   {"setupvalue", db_setupvalue},
+#endif
   {"traceback", db_traceback},
+#if !defined(LUA_SANDBOX_LIBS)
   {"setcstacklimit", db_setcstacklimit},
+#endif
   {NULL, NULL}
 };
 

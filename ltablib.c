@@ -33,6 +33,14 @@
 #define aux_getn(L,n,w)	(checktab(L, n, (w) | TAB_L), luaL_len(L, n))
 
 
+#if defined(LUA_EXT_READONLY)
+  #define treadonly_argcheck(L, I) \
+    luaL_argcheck((L), !lua_isreadonly((L), (I)), (I), "table is readonly")
+#else
+  #define treadonly_argcheck(L, I)
+#endif
+
+
 static int checkfield (lua_State *L, const char *key, int n) {
   lua_pushstring(L, key);
   return (lua_rawget(L, -n) != LUA_TNIL);
@@ -44,6 +52,9 @@ static int checkfield (lua_State *L, const char *key, int n) {
 ** has a metatable with the required metamethods)
 */
 static void checktab (lua_State *L, int arg, int what) {
+#if defined(LUA_EXT_READONLY)
+  if ((what & TAB_W)) treadonly_argcheck(L, arg);
+#endif
   if (lua_type(L, arg) != LUA_TTABLE) {  /* is it not a table? */
     int n = 1;  /* number of elements to pop */
     if (lua_getmetatable(L, arg) &&  /* must have metatable */
@@ -223,6 +234,8 @@ static int tunpack (lua_State *L) {
 /* type for array indices */
 typedef unsigned int IdxT;
 
+/* @LuaExt: generic unsigned midpoint */
+#define l_mididx(a, b) (((a) & (b)) + ((a) ^ (b)) / 2)
 
 /*
 ** Produce a "random" 'unsigned int' to randomize pivot choice. This
@@ -357,7 +370,7 @@ static void auxsort (lua_State *L, IdxT lo, IdxT up,
     if (up - lo == 1)  /* only 2 elements? */
       return;  /* already sorted */
     if (up - lo < RANLIMIT || rnd == 0)  /* small interval or no randomize? */
-      p = (lo + up)/2;  /* middle element is a good pivot */
+      p = l_mididx(lo, up); /* @LuaExt: (lo + up)/2; */  /* middle element is a good pivot */
     else  /* for larger intervals, it is worth a random pivot */
       p = choosePivot(lo, up, rnd);
     lua_geti(L, 1, p);
@@ -408,6 +421,88 @@ static int sort (lua_State *L) {
   return 0;
 }
 
+#if defined(LUA_EXT_READONLY)
+static int tfreeze(lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  if (l_unlikely(luaL_getmetafield(L, 1, "__metatable") != LUA_TNIL))
+    return luaL_error(L, "cannot change a protected metatable");
+  lua_setreadonly(L, 1, 1);
+  lua_pushvalue(L, 1);
+  return 1;
+}
+
+static int tisfrozen(lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  lua_pushboolean(L, lua_isreadonly(L, 1));
+  return 1;
+}
+#endif
+
+#if defined(LUA_EXT_API)
+static int ttypestr (lua_State *L) {
+  switch (lua_tabletype(L, 1)) {
+    case LUA_TTEMPTY: lua_pushstring(L, "empty"); break;
+    case LUA_TTARRAY: lua_pushstring(L, "array"); break;
+    case LUA_TTHASH: lua_pushstring(L, "hash"); break;
+    case LUA_TTMIXED: lua_pushstring(L, "mixed"); break;
+    default: luaL_pushfail(L); break;
+  }
+  return 1;
+}
+
+static int tcreate (lua_State *L) {
+  lua_Integer narray = luaL_checkinteger(L, 1);
+  lua_Integer nhash = luaL_optinteger(L, 2, 0);
+  luaL_argcheck(L, 0 <= narray && narray < INT_MAX, 1, "invalid narray size");
+  luaL_argcheck(L, 0 <= nhash && nhash < INT_MAX, 2, "invalid nrec size");
+  lua_createtable(L, (int)narray, (int)nhash);
+  return 1;
+}
+
+static int tfill (lua_State *L) {
+  lua_Integer narray = luaL_checkinteger(L, 1);
+  luaL_argcheck(L, 0 <= narray && narray < INT_MAX, 1, "invalid narray size");
+  if (lua_isnoneornil(L, 2))
+    lua_createtable(L, (int)narray, 0);
+  else
+    lua_filltable(L, (int)narray, 2);
+  return 1;
+}
+
+static int trehash (lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  treadonly_argcheck(L, 1);
+  lua_rehashtable(L, 1);
+  lua_pushvalue(L, 1);
+  return 1;
+}
+
+static int tclear (lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  treadonly_argcheck(L, 1);
+  lua_cleartable(L, 1);
+  lua_pushvalue(L, 1);
+  return 1;
+}
+
+static int tcompact (lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  treadonly_argcheck(L, 1);
+  lua_compacttable(L, 1);
+  lua_pushvalue(L, 1);
+  return 1;
+}
+
+static int tclone (lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  if (l_unlikely(luaL_getmetafield(L, 1, "__metatable") != LUA_TNIL))
+    return luaL_error(L, "cannot clone table with a protected metatable");
+  lua_newtable(L);  /* create a new table*/
+  lua_clonetable(L, 1, -1);
+  return 1;
+}
+#endif
+
 /* }====================================================== */
 
 
@@ -419,6 +514,19 @@ static const luaL_Reg tab_funcs[] = {
   {"remove", tremove},
   {"move", tmove},
   {"sort", sort},
+#if defined(LUA_EXT_READONLY)
+  {"freeze", tfreeze},
+  {"isfrozen", tisfrozen},
+#endif
+#if defined(LUA_EXT_API)
+  {"type", ttypestr},
+  {"create", tcreate}, {"new", tcreate},
+  {"fill", tfill},
+  {"clear", tclear}, {"wipe", tclear},
+  {"rehash", trehash},
+  {"compact", tcompact},
+  {"clone", tclone},
+#endif
   {NULL, NULL}
 };
 

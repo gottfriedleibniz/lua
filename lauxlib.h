@@ -71,6 +71,10 @@ LUALIB_API int   (luaL_newmetatable) (lua_State *L, const char *tname);
 LUALIB_API void  (luaL_setmetatable) (lua_State *L, const char *tname);
 LUALIB_API void *(luaL_testudata) (lua_State *L, int ud, const char *tname);
 LUALIB_API void *(luaL_checkudata) (lua_State *L, int ud, const char *tname);
+#if defined(LUA_EXT_USERTAG)
+LUALIB_API void *(luaL_checkusertag) (lua_State *L, int ud, int tag);
+LUALIB_API int   (luaL_nameusertag) (lua_State *L, int tag, const char *name);
+#endif
 
 LUALIB_API void (luaL_where) (lua_State *L, int lvl);
 LUALIB_API int (luaL_error) (lua_State *L, const char *fmt, ...);
@@ -89,10 +93,12 @@ LUALIB_API int (luaL_execresult) (lua_State *L, int stat);
 LUALIB_API int (luaL_ref) (lua_State *L, int t);
 LUALIB_API void (luaL_unref) (lua_State *L, int t, int ref);
 
+#if !defined(LUA_SANDBOX_API)
 LUALIB_API int (luaL_loadfilex) (lua_State *L, const char *filename,
                                                const char *mode);
 
 #define luaL_loadfile(L,f)	luaL_loadfilex(L,f,NULL)
+#endif
 
 LUALIB_API int (luaL_loadbufferx) (lua_State *L, const char *buff, size_t sz,
                                    const char *name, const char *mode);
@@ -295,7 +301,21 @@ typedef struct luaL_Stream {
 /* }============================================================ */
 
 
+/*
+** {============================================================
+** API Extensions
+** =============================================================
+*/
+
+#if defined(LUA_EXT_ITERATION)
+
+/* See luaB_next in lbaselib.c */
+LUA_API int (luaB_next) (lua_State *L);
+/* See ipairsaux in lbaselib.c */
+LUA_API int (luaB_ipairsaux) (lua_State *L);
 
 #endif
 
+/* }============================================================ */
+#endif
 

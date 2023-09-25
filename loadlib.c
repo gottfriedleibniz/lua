@@ -22,6 +22,7 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+#if !defined(LUA_SANDBOX_LIBS)
 
 
 /*
@@ -654,6 +655,10 @@ static int ll_require (lua_State *L) {
     return 1;  /* package is already loaded */
   /* else must load package */
   lua_pop(L, 1);  /* remove 'getfield' result */
+#if defined(LUA_EXT_READONLY)
+  if (lua_isreadonly(L, -1))
+    return luaL_error(L, "readonly " LUA_LOADED_TABLE " table");
+#endif
   findloader(L, name);
   lua_rotate(L, -2, 1);  /* function <-> loader data */
   lua_pushvalue(L, 1);  /* name is 1st argument to module loader */
@@ -730,9 +735,13 @@ static void createclibstable (lua_State *L) {
   lua_setfield(L, -2, "__gc");  /* set finalizer for CLIBS table */
   lua_setmetatable(L, -2);
 }
+#endif
 
 
 LUAMOD_API int luaopen_package (lua_State *L) {
+#if defined(LUA_SANDBOX_LIBS)
+  lua_newtable(L);
+#else
   createclibstable(L);
   luaL_newlib(L, pk_funcs);  /* create 'package' table */
   createsearcherstable(L);
@@ -753,6 +762,7 @@ LUAMOD_API int luaopen_package (lua_State *L) {
   lua_pushvalue(L, -2);  /* set 'package' as upvalue for next lib */
   luaL_setfuncs(L, ll_funcs, 1);  /* open lib into global table */
   lua_pop(L, 1);  /* pop global table */
+#endif
   return 1;  /* return 'package' table */
 }
 

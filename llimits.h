@@ -62,8 +62,9 @@ typedef signed char ls_byte;
 
 /*
 ** test whether an unsigned value is a power of 2 (or zero)
+** @LuaExt: Avoid potential naming conflict with libcxx{9,10,11}
 */
-#define ispow2(x)	(((x) & ((x) - 1)) == 0)
+#define l_ispow2(x)	(((x) & ((x) - 1)) == 0)
 
 
 /* number of chars of a literal string without the ending \0 */
@@ -167,7 +168,7 @@ typedef LUAI_UACINT l_uacInt;
 */
 #if !defined(l_noret)
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || LUA_HAS_ATTRIBUTE(noreturn)
 #define l_noret		void __attribute__((noreturn))
 #elif defined(_MSC_VER) && _MSC_VER >= 1200
 #define l_noret		void __declspec(noreturn)
@@ -180,10 +181,11 @@ typedef LUAI_UACINT l_uacInt;
 
 /*
 ** Inline functions
+** @LuaExt: clang-cl does not define GNUC
 */
 #if !defined(LUA_USE_C89)
 #define l_inline	inline
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) || defined(__clang__)
 #define l_inline	__inline__
 #else
 #define l_inline	/* empty */

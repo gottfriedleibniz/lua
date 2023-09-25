@@ -55,7 +55,20 @@ typedef enum UnOpr { OPR_MINUS, OPR_BNOT, OPR_NOT, OPR_LEN, OPR_NOUNOPR } UnOpr;
 #define getinstruction(fs,e)	((fs)->f->code[(e)->u.info])
 
 
+#if defined(LUA_EXT_SAFENAV)
+/* VSCALL: given the current TEST/JMP layout a fixed result count is required.
+** Forcing nresults to one will require more thought. */
+#define luaK_setmultret(fs, e)                       \
+  LUA_MLM_BEGIN                                      \
+  if ((e)->k == VSCALL)                              \
+    luaK_semerror((fs)->ls,                          \
+      "multiple returns safecall must be assigned"); \
+  else                                               \
+    luaK_setreturns(fs, e, LUA_MULTRET);             \
+  LUA_MLM_END
+#else
 #define luaK_setmultret(fs,e)	luaK_setreturns(fs, e, LUA_MULTRET)
+#endif
 
 #define luaK_jumpto(fs,t)	luaK_patchlist(fs, luaK_jump(fs), t)
 
@@ -73,6 +86,9 @@ LUAI_FUNC void luaK_dischargevars (FuncState *fs, expdesc *e);
 LUAI_FUNC int luaK_exp2anyreg (FuncState *fs, expdesc *e);
 LUAI_FUNC void luaK_exp2anyregup (FuncState *fs, expdesc *e);
 LUAI_FUNC void luaK_exp2nextreg (FuncState *fs, expdesc *e);
+#if defined(LUA_EXT_IFEXPR)
+LUAI_FUNC void luaK_exp2reg (FuncState *fs, expdesc *e, int reg);
+#endif
 LUAI_FUNC void luaK_exp2val (FuncState *fs, expdesc *e);
 LUAI_FUNC void luaK_self (FuncState *fs, expdesc *e, expdesc *key);
 LUAI_FUNC void luaK_indexed (FuncState *fs, expdesc *t, expdesc *k);

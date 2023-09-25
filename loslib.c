@@ -101,7 +101,8 @@
 */
 #if !defined(lua_tmpnam)	/* { */
 
-#if defined(LUA_USE_POSIX)	/* { */
+/* @LuaExt: tmpnam is not defined on WASI */
+#if defined(LUA_USE_POSIX) || defined(__wasi__)	/* { */
 
 #include <unistd.h>
 
@@ -128,6 +129,117 @@
 #endif				/* } */
 /* }================================================================== */
 
+/*
+** {==================================================================
+** High-Resolution Timers
+** ===================================================================
+*/
+#if defined(LUA_EXT_CHRONO)
+#include "llimits.h"
+
+#define LUA_SYS_CLOCK /* high resolution timers enabled */
+#if defined(_WIN32)
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+  static LARGE_INTEGER freq;
+  static void InitPerformanceCounter(void) {
+    static int init = 1; /* @NOTE: potential race condition */
+    if (init) {
+      init = 0;
+      QueryPerformanceFrequency(&freq);
+    }
+  }
+#elif defined(__APPLE__)
+  #include <sys/time.h>
+#elif defined(_POSIX_TIMERS) && _POSIX_TIMERS > 0
+#ifdef _POSIX_MONOTONIC_CLOCK
+  #define HAVE_CLOCK_GETTIME
+  #include <time.h>
+#else
+  #include <sys/time.h>
+  #warning "A nanosecond resolution clock is not available; falling back to gettimeofday()"
+#endif
+#else
+  #undef LUA_SYS_CLOCK
+  #warning "A nanosecond resolution clock is not available"
+#endif
+
+#if defined(LUA_SYS_CLOCK)
+#include <stdint.h>
+static int os_microtime(lua_State *L) {
+#if defined(_WIN32)
+  LARGE_INTEGER now;
+  QueryPerformanceCounter(&now);
+  l_pushtime(L, ((1000000L * now.QuadPart) / freq.QuadPart));
+#elif defined(HAVE_CLOCK_GETTIME)
+  struct timespec tp;
+  if (clock_gettime(CLOCK_MONOTONIC, &tp) != 0)
+    return luaL_error(L, "clock_gettime(CLOCK_MONOTONIC) failed:%s", strerror(errno));
+  l_pushtime(L, (tp.tv_sec * 1000000L) + (tp.tv_nsec / 1000L));
+#else
+  struct timeval tp;
+  if (gettimeofday(&tp, NULL) < 0)
+    return luaL_error(L, "gettimeofday() failed!:%s", strerror(errno));
+  l_pushtime(L, (tp.tv_sec * 1000000L) + tp.tv_usec);
+#endif
+  return 1;
+}
+
+#if LUA_32BITS == 0
+static int os_nanotime(lua_State *L) {
+#if defined(_WIN32)
+  LARGE_INTEGER now;
+  QueryPerformanceCounter(&now);
+  l_pushtime(L, ((1000000000L * now.QuadPart) / freq.QuadPart));
+#elif defined(HAVE_CLOCK_GETTIME)
+  struct timespec tp;
+  if (clock_gettime(CLOCK_MONOTONIC, &tp) != 0)
+    return luaL_error(L, "clock_gettime(CLOCK_MONOTONIC) failed:%s", strerror(errno));
+  l_pushtime(L, (tp.tv_sec * 1000000000L) + tp.tv_nsec);
+#else
+  struct timeval tp;
+  if (gettimeofday(&tp, NULL) < 0)
+    return luaL_error(L, "gettimeofday() failed!:%s", strerror(errno));
+  l_pushtime(L, (tp.tv_sec * 1000000000L) + (tp.tv_usec * 1000L));
+#endif
+  return 1;
+}
+#endif
+#endif
+
+/*
+@@ LUA_SYS_RDTSC Sample the rdtsc instruction and return the processor timestamp
+*/
+#if LUA_INT_DEFAULT == LUA_INT_LONGLONG && defined(UINTMAX_MAX)
+#if defined(_MSC_VER) && defined(_M_X64)
+  #include <intrin.h>
+  #define LUA_SYS_RDTSC
+#elif defined(__GNUC__) && defined(__x86_64__)
+  #if defined(__has_include) && __has_include(<x86intrin.h>)
+    #include <x86intrin.h>
+    #define LUA_SYS_RDTSC
+  #endif
+#elif defined(__GNUC__) && defined(__aarch64__)
+  #define LUA_SYS_RDTSC
+#endif
+#endif
+
+#if defined(LUA_SYS_RDTSC)
+static int os_rdtsc(lua_State *L) {
+#if defined(__aarch64__)
+  uint64_t cval;
+  __asm__ volatile("mrs %0, cntvct_el0" : "=r" (cval));
+  l_pushtime(L, cval);
+#else
+  unsigned int aux;
+  l_pushtime(L, __rdtscp(&aux));
+#endif
+  return 1;
+}
+#endif
+
+#endif
+/* }================================================================== */
 
 #if !defined(l_system)
 #if defined(LUA_USE_IOS)
@@ -139,6 +251,7 @@
 #endif
 
 
+#if !defined(LUA_SANDBOX_LIBS)
 static int os_execute (lua_State *L) {
   const char *cmd = luaL_optstring(L, 1, NULL);
   int stat;
@@ -181,6 +294,7 @@ static int os_getenv (lua_State *L) {
   lua_pushstring(L, getenv(luaL_checkstring(L, 1)));  /* if NULL push nil */
   return 1;
 }
+#endif
 
 
 static int os_clock (lua_State *L) {
@@ -367,17 +481,62 @@ static int os_time (lua_State *L) {
 }
 
 
+/*
+** Use a built-in implementation of difftime to ensure consistent behavior
+** across C libraries. For example, glibc will account for time_t overflows
+** while ucrt will return 0 and set errno to EINVAL.
+*/
+#if defined(LUA_EXT_CHRONO) && defined(UINTMAX_MAX)
+static lua_Number t_subtract(time_t end, time_t start) {
+  if (((time_t)-1 >= 0))  /* unsigned */
+    return cast_num(end - start);
+  else {
+    uintmax_t dt = cast(uintmax_t, end) - cast(uintmax_t, start);
+    lua_Number result = cast_num(dt);
+    if (UINTMAX_MAX / 2 < INTMAX_MAX) {
+      uintmax_t hdt = dt / 2;
+      time_t dht = (end / 2) - (start / 2);
+      if (2 < dht - hdt + 1) {
+        result = cast_num(dt + 2.0L * (UINTMAX_MAX - UINTMAX_MAX / 2));
+      }
+    }
+    return result;
+  }
+}
+
+static int os_difftime (lua_State *L) {
+  time_t t1 = l_checktime(L, 1);
+  time_t t2 = l_checktime(L, 2);
+  lua_pushnumber(L, t1 < t2 ? -t_subtract(t2, t1) : t_subtract(t1, t2));
+  return 1;
+}
+#else
 static int os_difftime (lua_State *L) {
   time_t t1 = l_checktime(L, 1);
   time_t t2 = l_checktime(L, 2);
   lua_pushnumber(L, (lua_Number)difftime(t1, t2));
   return 1;
 }
+#endif
 
 /* }====================================================== */
 
 
+#if !defined(LUA_SANDBOX_LIBS)
 static int os_setlocale (lua_State *L) {
+#if defined(__EMSCRIPTEN__) || defined(__wasi__)
+  /* musl: all locale names are valid: invalid or unavailable definitions become
+  ** aliases for C.UTF-8 */
+  size_t l;
+  const char *s = luaL_optlstring(L, 1, NULL, &l);
+  if (l == 0)  /* empty string or nil */
+    lua_pushliteral(L, "C");
+  else if (strcmp(s, "C") == 0 || strcmp(s, "C.UTF-8") == 0)
+    lua_pushvalue(L, 1);
+  else
+    lua_pushnil(L);
+  return 1;
+#else
   static const int cat[] = {LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY,
                       LC_NUMERIC, LC_TIME};
   static const char *const catnames[] = {"all", "collate", "ctype", "monetary",
@@ -386,6 +545,7 @@ static int os_setlocale (lua_State *L) {
   int op = luaL_checkoption(L, 2, "all", catnames);
   lua_pushstring(L, setlocale(cat[op], l));
   return 1;
+#endif
 }
 
 
@@ -400,29 +560,56 @@ static int os_exit (lua_State *L) {
   if (L) exit(status);  /* 'if' to avoid warnings for unreachable 'return' */
   return 0;
 }
+#endif
 
 
 static const luaL_Reg syslib[] = {
   {"clock",     os_clock},
   {"date",      os_date},
   {"difftime",  os_difftime},
+#if !defined(LUA_SANDBOX_LIBS)
   {"execute",   os_execute},
   {"exit",      os_exit},
   {"getenv",    os_getenv},
   {"remove",    os_remove},
   {"rename",    os_rename},
   {"setlocale", os_setlocale},
+#endif
   {"time",      os_time},
+#if !defined(LUA_SANDBOX_LIBS)
   {"tmpname",   os_tmpname},
+#endif
+#if defined(LUA_SYS_CLOCK)
+  {"usec",      os_microtime},
+  #if LUA_32BITS == 0
+  {"nsec",      os_nanotime},
+  #endif
+#endif
+#if defined(LUA_SYS_RDTSC)
+  {"rdtsc",     os_rdtsc},
+#endif
+#if defined(LUA_EXT_API)
+  {"platform",  NULL},
+#endif
   {NULL, NULL}
 };
 
 /* }====================================================== */
 
+#if defined(LUA_EXT_API) && !defined(LUA_PLATFORM)
+#define LUA_PLATFORM "unknown"
+#endif
 
 
 LUAMOD_API int luaopen_os (lua_State *L) {
+#if defined(LUA_SYS_CLOCK) && defined(_WIN32)
+  InitPerformanceCounter();
+#endif
   luaL_newlib(L, syslib);
+#if defined(LUA_EXT_API)
+  lua_pushliteral(L, LUA_PLATFORM);
+  lua_setfield(L, -2, "platform");
+#endif
   return 1;
 }
 

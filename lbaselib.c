@@ -21,6 +21,14 @@
 #include "lualib.h"
 
 
+#if defined(LUA_EXT_READONLY)
+  #define luaB_readonly_argcheck(L, I) \
+    luaL_argcheck((L), !lua_isreadonly((L), (I)), (I), "table is readonly")
+#else
+  #define luaB_readonly_argcheck(L, I)
+#endif
+
+
 static int luaB_print (lua_State *L) {
   int n = lua_gettop(L);  /* number of arguments */
   int i;
@@ -138,6 +146,7 @@ static int luaB_setmetatable (lua_State *L) {
   int t = lua_type(L, 2);
   luaL_checktype(L, 1, LUA_TTABLE);
   luaL_argexpected(L, t == LUA_TNIL || t == LUA_TTABLE, 2, "nil or table");
+  luaB_readonly_argcheck(L, 1);
   if (l_unlikely(luaL_getmetafield(L, 1, "__metatable") != LUA_TNIL))
     return luaL_error(L, "cannot change a protected metatable");
   lua_settop(L, 2);
@@ -175,6 +184,7 @@ static int luaB_rawset (lua_State *L) {
   luaL_checktype(L, 1, LUA_TTABLE);
   luaL_checkany(L, 2);
   luaL_checkany(L, 3);
+  luaB_readonly_argcheck(L, 1);
   lua_settop(L, 3);
   lua_rawset(L, 1);
   return 1;
@@ -197,12 +207,17 @@ static int pushmode (lua_State *L, int oldmode) {
 #define checkvalres(res) { if (res == -1) break; }
 
 static int luaB_collectgarbage (lua_State *L) {
+#if defined(LUA_SANDBOX_LIBS)
+  static const char *const opts[] = { "collect", "count", "isrunning", NULL };
+  static const int optsnum[] = { LUA_GCCOLLECT, LUA_GCCOUNT, LUA_GCISRUNNING };
+#else
   static const char *const opts[] = {"stop", "restart", "collect",
     "count", "step", "setpause", "setstepmul",
     "isrunning", "generational", "incremental", NULL};
   static const int optsnum[] = {LUA_GCSTOP, LUA_GCRESTART, LUA_GCCOLLECT,
     LUA_GCCOUNT, LUA_GCSTEP, LUA_GCSETPAUSE, LUA_GCSETSTEPMUL,
     LUA_GCISRUNNING, LUA_GCGEN, LUA_GCINC};
+#endif
   int o = optsnum[luaL_checkoption(L, 1, "collect", opts)];
   switch (o) {
     case LUA_GCCOUNT: {
@@ -264,7 +279,11 @@ static int luaB_type (lua_State *L) {
 }
 
 
+#if defined(LUA_EXT_ITERATION)
+LUA_API int luaB_next (lua_State *L) {
+#else
 static int luaB_next (lua_State *L) {
+#endif
   luaL_checktype(L, 1, LUA_TTABLE);
   lua_settop(L, 2);  /* create a 2nd argument if there isn't one */
   if (lua_next(L, 1))
@@ -299,7 +318,12 @@ static int luaB_pairs (lua_State *L) {
 /*
 ** Traversal function for 'ipairs'
 */
+#if defined(LUA_EXT_ITERATION)
+#define ipairsaux luaB_ipairsaux
+LUA_API int luaB_ipairsaux (lua_State *L) {
+#else
 static int ipairsaux (lua_State *L) {
+#endif
   lua_Integer i = luaL_checkinteger(L, 2);
   i = luaL_intop(+, i, 1);
   lua_pushinteger(L, i);
@@ -337,6 +361,7 @@ static int load_aux (lua_State *L, int status, int envidx) {
 }
 
 
+#if !defined(LUA_SANDBOX_LIBS) && !defined(LUA_SANDBOX_API)
 static int luaB_loadfile (lua_State *L) {
   const char *fname = luaL_optstring(L, 1, NULL);
   const char *mode = luaL_optstring(L, 2, NULL);
@@ -344,6 +369,7 @@ static int luaB_loadfile (lua_State *L) {
   int status = luaL_loadfilex(L, fname, mode);
   return load_aux(L, status, env);
 }
+#endif
 
 
 /*
@@ -406,6 +432,7 @@ static int luaB_load (lua_State *L) {
 /* }====================================================== */
 
 
+#if !defined(LUA_SANDBOX_LIBS) && !defined(LUA_SANDBOX_API)
 static int dofilecont (lua_State *L, int d1, lua_KContext d2) {
   (void)d1;  (void)d2;  /* only to match 'lua_Kfunction' prototype */
   return lua_gettop(L) - 1;
@@ -420,6 +447,7 @@ static int luaB_dofile (lua_State *L) {
   lua_callk(L, 0, LUA_MULTRET, 0, dofilecont);
   return dofilecont(L, 0, 0);
 }
+#endif
 
 
 static int luaB_assert (lua_State *L) {
@@ -438,7 +466,7 @@ static int luaB_assert (lua_State *L) {
 static int luaB_select (lua_State *L) {
   int n = lua_gettop(L);
   if (lua_type(L, 1) == LUA_TSTRING && *lua_tostring(L, 1) == '#') {
-    lua_pushinteger(L, n-1);
+    lua_pushinteger(L, (lua_Integer)n - 1);  /* @LuaExt: Explicit cast */
     return 1;
   }
   else {
@@ -503,14 +531,31 @@ static int luaB_tostring (lua_State *L) {
 }
 
 
+#if defined(LUA_EXT_DEFER_API)
+static int luaB_defer (lua_State *L) {  /* func2close */
+  luaL_checktype(L, 1, LUA_TFUNCTION);
+  lua_newtable(L);  /* dummy object */
+  lua_createtable(L, 0, 1);  /* metatable */
+  lua_pushvalue(L, 1);
+  lua_setfield(L, -2, "__close");
+  lua_setmetatable(L, -2);
+  return 1;
+}
+#endif
+
+
 static const luaL_Reg base_funcs[] = {
   {"assert", luaB_assert},
   {"collectgarbage", luaB_collectgarbage},
+#if !defined(LUA_SANDBOX_LIBS) && !defined(LUA_SANDBOX_API)
   {"dofile", luaB_dofile},
+#endif
   {"error", luaB_error},
   {"getmetatable", luaB_getmetatable},
   {"ipairs", luaB_ipairs},
+#if !defined(LUA_SANDBOX_LIBS) && !defined(LUA_SANDBOX_API)
   {"loadfile", luaB_loadfile},
+#endif
   {"load", luaB_load},
   {"next", luaB_next},
   {"pairs", luaB_pairs},
@@ -527,6 +572,9 @@ static const luaL_Reg base_funcs[] = {
   {"tostring", luaB_tostring},
   {"type", luaB_type},
   {"xpcall", luaB_xpcall},
+#if defined(LUA_EXT_DEFER_API)
+  {"defer", luaB_defer},
+#endif
   /* placeholders */
   {LUA_GNAME, NULL},
   {"_VERSION", NULL},

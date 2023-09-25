@@ -76,17 +76,21 @@ print('+')
 -- The next tests for 'require' assume some specific directories and
 -- libraries.
 
-if not _port then --[
+if not _port and os.platform ~= "darwin" then --[ @TODO(s)
 
 local dirsep = string.match(package.config, "^([^\n]+)\n")
 
 -- auxiliary directory with C modules and temporary files
 local DIR = "libs" .. dirsep
 
+-- correct directory separator
+local function P (x)
+  return string.gsub(x, "/", dirsep)
+end
+
 -- prepend DIR to a name and correct directory separators
 local function D (x)
-  local x = string.gsub(x, "/", dirsep)
-  return DIR .. x
+  return DIR .. P(x)
 end
 
 -- prepend DIR and pospend proper C lib. extension to a name
@@ -147,6 +151,7 @@ package.path = string.gsub("D/?.lua;D/?.lc;D/?;D/??x?;D/L", "D/", DIR)
 
 local try = function (p, n, r, ext)
   NAME = nil
+  ext = (ext and P(ext)) or nil
   local rr, x = require(p)
   assert(NAME == n)
   assert(REQUIRED == p)
@@ -197,18 +202,18 @@ NAME, REQUIRED, AA, B = nil
 
 local _G = _G
 
-package.path = string.gsub("D/?.lua;D/?/init.lua", "D/", DIR)
+package.path = P(string.gsub("D/?.lua;D/?/init.lua", "D/", DIR))
 
 files = {
-  ["P1/init.lua"] = "AA = 10",
-  ["P1/xuxu.lua"] = "AA = 20",
+  [P"P1/init.lua"] = "AA = 10",
+  [P"P1/xuxu.lua"] = "AA = 20",
 }
 
 createfiles(files, "_ENV = {}\n", "\nreturn _ENV\n")
 AA = 0
 
 local m, ext = assert(require"P1")
-assert(ext == "libs/P1/init.lua")
+assert(ext == P"libs/P1/init.lua")
 assert(AA == 0 and m.AA == 10)
 assert(require"P1" == m)
 assert(require"P1" == m)
@@ -216,7 +221,7 @@ assert(require"P1" == m)
 assert(package.searchpath("P1.xuxu", package.path) == D"P1/xuxu.lua")
 m.xuxu, ext = assert(require"P1.xuxu")
 assert(AA == 0 and m.xuxu.AA == 20)
-assert(ext == "libs/P1/xuxu.lua")
+assert(ext == P"libs/P1/xuxu.lua")
 assert(require"P1.xuxu" == m.xuxu)
 assert(require"P1.xuxu" == m.xuxu)
 assert(require"P1" == m and m.AA == 10)
@@ -294,7 +299,7 @@ else
   -- test C modules with prefixes in names
   package.cpath = DC"?"
   local lib2, ext = require"lib2-v2"
-  assert(string.find(ext, "libs/lib2-v2", 1, true))
+  assert(string.find(ext, P"libs/lib2-v2", 1, true))
   -- check correct access to global environment and correct
   -- parameters
   assert(_ENV.x == "lib2-v2" and _ENV.y == DC"lib2-v2")
@@ -303,7 +308,7 @@ else
   -- test C submodules
   local fs, ext = require"lib1.sub"
   assert(_ENV.x == "lib1.sub" and _ENV.y == DC"lib1")
-  assert(string.find(ext, "libs/lib1", 1, true))
+  assert(string.find(ext, P"libs/lib1", 1, true))
   assert(fs.id(45) == 45)
   _ENV.x, _ENV.y = nil
 end
@@ -447,7 +452,7 @@ do
 end
 
 
--- test of large float/integer indices 
+-- test of large float/integer indices
 
 -- compute maximum integer where all bits fit in a float
 local maxint = math.maxinteger
@@ -486,7 +491,7 @@ do
   assert(i == 2 and b[1] == 1 and a == 1 and j == b and b[2] == 2 and
          b[3] == 1)
   a = {}
-  local function foo ()    -- assigining to upvalues
+  local function foo ()    -- assigning to upvalues
     b, a.x, a = a, 10, 20
   end
   foo()

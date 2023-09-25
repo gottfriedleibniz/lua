@@ -79,6 +79,7 @@ const TValue *luaT_gettmbyobj (lua_State *L, const TValue *o, TMS event) {
       break;
     default:
       mt = G(L)->mt[ttype(o)];
+      break;
   }
   return (mt ? luaH_getshortstr(mt, G(L)->tmname[event]) : &G(L)->nilvalue);
 }

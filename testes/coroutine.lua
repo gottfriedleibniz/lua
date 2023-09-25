@@ -397,7 +397,7 @@ end
 assert(a == 5^4)
 
 
--- access to locals of collected corroutines
+-- access to locals of collected coroutines
 local C = {}; setmetatable(C, {__mode = "kv"})
 local x = coroutine.wrap (function ()
             local a = 10
@@ -515,7 +515,7 @@ else
   print "testing yields inside hooks"
 
   local turn
-  
+
   local function fact (t, x)
     assert(turn == t)
     if x == 0 then return 1
@@ -640,7 +640,7 @@ else
 
 
   print "testing coroutine API"
-  
+
   -- reusing a thread
   assert(T.testC([[
     newthread      # create thread
@@ -695,7 +695,7 @@ else
   -- using a main thread as a coroutine  (dubious use!)
   local state = T.newstate()
 
-  -- check that yielddable is working correctly
+  -- check that yieldable is working correctly
   assert(T.testC(state, "newthread; isyieldable -1; remove 1; return 1"))
 
   -- main thread is not yieldable
@@ -918,7 +918,7 @@ do   -- a few more tests for comparison operators
     until res ~= 10
     return res
   end
-  
+
   local function test ()
     local a1 = setmetatable({x=1}, mt1)
     local a2 = setmetatable({x=2}, mt2)
@@ -930,7 +930,7 @@ do   -- a few more tests for comparison operators
     assert(2 >= a2)
     return true
   end
-  
+
   run(test)
 
 end
@@ -1092,11 +1092,11 @@ co = coroutine.wrap(function (...) return
           cannot be here!
        ]],
        [[  # 1st continuation
-         yieldk 0 3 
+         yieldk 0 3
          cannot be here!
        ]],
        [[  # 2nd continuation
-         yieldk 0 4 
+         yieldk 0 4
          cannot be here!
        ]],
        [[  # 3th continuation

@@ -35,6 +35,24 @@ enum OpMode {iABC, iABx, iAsBx, iAx, isJ};  /* basic instruction formats */
 /*
 ** size and position of opcode arguments.
 */
+#if defined(LUA_EXT_KPOSITION)
+#define SIZE_OP		7
+#define SIZE_A		8
+#define SIZE_B		8
+#define SIZE_C		8
+#define SIZE_Bx		(SIZE_C + SIZE_B)
+#define SIZE_Ax		(SIZE_Bx + SIZE_A + 1)
+#define SIZE_sJ		(SIZE_Bx + SIZE_A + 1)
+
+#define POS_OP		0
+#define POS_k		SIZE_OP
+#define POS_A		(POS_k + 1)
+#define POS_B		(POS_A + SIZE_A)
+#define POS_C		(POS_B + SIZE_B)
+#define POS_Bx		POS_B
+#define POS_Ax		(POS_OP + SIZE_OP)
+#define POS_sJ		(POS_OP + SIZE_OP)
+#else
 #define SIZE_C		8
 #define SIZE_B		8
 #define SIZE_Bx		(SIZE_C + SIZE_B + 1)
@@ -56,6 +74,7 @@ enum OpMode {iABC, iABx, iAsBx, iAx, isJ};  /* basic instruction formats */
 #define POS_Ax		POS_A
 
 #define POS_sJ		POS_A
+#endif
 
 
 /*
@@ -133,7 +152,7 @@ enum OpMode {iABC, iABx, iAsBx, iAx, isJ};  /* basic instruction formats */
 #define GETARG_sC(i)	sC2int(GETARG_C(i))
 #define SETARG_C(i,v)	setarg(i, v, POS_C, SIZE_C)
 
-#define TESTARG_k(i)	check_exp(checkopm(i, iABC), (cast_int(((i) & (1u << POS_k)))))
+#define TESTARG_k(i)	check_exp(checkopm(i, iABC), (((i) & (cast(Instruction, 1) << POS_k)) != 0))
 #define GETARG_k(i)	check_exp(checkopm(i, iABC), getarg(i, POS_k, 1))
 #define SETARG_k(i,v)	setarg(i, v, POS_k, 1)
 
@@ -307,10 +326,18 @@ OP_VARARG,/*	A C	R[A], R[A+1], ..., R[A+C-2] = vararg		*/
 OP_VARARGPREP,/*A	(adjust vararg parameters)			*/
 
 OP_EXTRAARG/*	Ax	extra (larger) argument for previous opcode	*/
+
+#if defined(LUA_EXT_DEFER)
+,OP_DEFER /*	A Bx	R[A] := closure(KPROTO[Bx]); mark variable R[A] "to be closed" */
+#endif
 } OpCode;
 
 
+#if defined(LUA_EXT_DEFER)
+#define NUM_OPCODES	((int)(OP_DEFER) + 1)
+#else
 #define NUM_OPCODES	((int)(OP_EXTRAARG) + 1)
+#endif
 
 
 
@@ -401,5 +428,112 @@ LUAI_DDEC(const lu_byte luaP_opmodes[NUM_OPCODES];)
 
 /* number of list items to accumulate before a SETLIST instruction */
 #define LFIELDS_PER_FLUSH	50
+
+/*
+** {==============================================================
+** @LuaExt: replace ljumptab and lopnames with xmacros
+** ===============================================================
+*/
+
+#if 0
+** Generated using the repurposed sed command from ljumptab.h
+** sed -n '/^OP_/!d; s/OP_/  X(/ ; s/,.*/) \\/ ; s/\/.*/)/ ; p'  lopcodes.h
+#endif
+
+/* ORDER OP */
+#define LUA_XOP_(X) \
+  X(MOVE)           \
+  X(LOADI)          \
+  X(LOADF)          \
+  X(LOADK)          \
+  X(LOADKX)         \
+  X(LOADFALSE)      \
+  X(LFALSESKIP)     \
+  X(LOADTRUE)       \
+  X(LOADNIL)        \
+  X(GETUPVAL)       \
+  X(SETUPVAL)       \
+  X(GETTABUP)       \
+  X(GETTABLE)       \
+  X(GETI)           \
+  X(GETFIELD)       \
+  X(SETTABUP)       \
+  X(SETTABLE)       \
+  X(SETI)           \
+  X(SETFIELD)       \
+  X(NEWTABLE)       \
+  X(SELF)           \
+  X(ADDI)           \
+  X(ADDK)           \
+  X(SUBK)           \
+  X(MULK)           \
+  X(MODK)           \
+  X(POWK)           \
+  X(DIVK)           \
+  X(IDIVK)          \
+  X(BANDK)          \
+  X(BORK)           \
+  X(BXORK)          \
+  X(SHRI)           \
+  X(SHLI)           \
+  X(ADD)            \
+  X(SUB)            \
+  X(MUL)            \
+  X(MOD)            \
+  X(POW)            \
+  X(DIV)            \
+  X(IDIV)           \
+  X(BAND)           \
+  X(BOR)            \
+  X(BXOR)           \
+  X(SHL)            \
+  X(SHR)            \
+  X(MMBIN)          \
+  X(MMBINI)         \
+  X(MMBINK)         \
+  X(UNM)            \
+  X(BNOT)           \
+  X(NOT)            \
+  X(LEN)            \
+  X(CONCAT)         \
+  X(CLOSE)          \
+  X(TBC)            \
+  X(JMP)            \
+  X(EQ)             \
+  X(LT)             \
+  X(LE)             \
+  X(EQK)            \
+  X(EQI)            \
+  X(LTI)            \
+  X(LEI)            \
+  X(GTI)            \
+  X(GEI)            \
+  X(TEST)           \
+  X(TESTSET)        \
+  X(CALL)           \
+  X(TAILCALL)       \
+  X(RETURN)         \
+  X(RETURN0)        \
+  X(RETURN1)        \
+  X(FORLOOP)        \
+  X(FORPREP)        \
+  X(TFORPREP)       \
+  X(TFORCALL)       \
+  X(TFORLOOP)       \
+  X(SETLIST)        \
+  X(CLOSURE)        \
+  X(VARARG)         \
+  X(VARARGPREP)     \
+  X(EXTRAARG)
+
+#if defined(LUA_EXT_DEFER)
+  #define LUA_XOP(X) \
+    LUA_XOP_(X)      \
+    X(DEFER)
+#else
+  #define LUA_XOP LUA_XOP_
+#endif
+
+/* }============================================================ */
 
 #endif

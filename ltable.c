@@ -98,6 +98,8 @@ static const Node dummynode_ = {
 
 static const TValue absentkey = {ABSTKEYCONSTANT};
 
+/* @LuaExt: generic unsigned midpoint */
+#define l_miduns(a, b) (((a) & (b)) + ((a) ^ (b)) / 2)
 
 /*
 ** Hash for integers. To allow a good hash, use the remainder operator
@@ -241,7 +243,7 @@ static int equalkey (const TValue *k1, const Node *n2, int deadok) {
 ** part of table 't'. (Otherwise, the array part must be larger than
 ** 'alimit'.)
 */
-#define limitequalsasize(t)	(isrealasize(t) || ispow2((t)->alimit))
+#define limitequalsasize(t)	(isrealasize(t) || l_ispow2((t)->alimit))
 
 
 /*
@@ -264,7 +266,7 @@ LUAI_FUNC unsigned int luaH_realasize (const Table *t) {
 #endif
 #endif
     size++;
-    lua_assert(ispow2(size) && size/2 < t->alimit && t->alimit < size);
+    lua_assert(l_ispow2(size) && size/2 < t->alimit && t->alimit < size);
     return size;
   }
 }
@@ -276,7 +278,7 @@ LUAI_FUNC unsigned int luaH_realasize (const Table *t) {
 ** without changing the real size.)
 */
 static int ispow2realasize (const Table *t) {
-  return (!isrealasize(t) || ispow2(t->alimit));
+  return (!isrealasize(t) || l_ispow2(t->alimit));
 }
 
 
@@ -367,10 +369,31 @@ int luaH_next (lua_State *L, Table *t, StkId key) {
   return 0;  /* no more elements */
 }
 
+#if defined(LUA_EXT_ITERATION)
+unsigned int luaH_rawnext (lua_State *L, Table *t, StkId v, unsigned int idx) {
+  unsigned int asize = luaH_realasize(t);
+  for (; idx < asize; idx++) {  /* try first array part */
+    if (!isempty(&t->array[idx])) {
+      setivalue(s2v(v), idx + 1);
+      setobj2s(L, v + 1, &t->array[idx]);
+      return idx + 1;
+    }
+  }
+  for (idx -= asize; cast_int(idx) < sizenode(t); idx++) {  /* hash part */
+    Node *n = gnode(t, idx);
+    if (!isempty(gval(n))) {
+      getnodekey(L, s2v(v), n);
+      setobj2s(L, v + 1, gval(n));
+      return idx + asize + 1;
+    }
+  }
+  return 0;  /* no more elements */
+}
+#endif
 
 static void freehash (lua_State *L, Table *t) {
   if (!isdummy(t))
-    luaM_freearray(L, t->node, cast_sizet(sizenode(t)));
+    luaM_freearray(L, t->node, sizenode_t(t));
 }
 
 
@@ -443,8 +466,12 @@ static unsigned int numusearray (const Table *t, unsigned int *nums) {
     }
     /* count elements in range (2^(lg - 1), 2^lg] */
     for (; i <= lim; i++) {
+#if 1 /* @LuaExt: compiler output experiment */
+      lc += (isempty(&t->array[i - 1]) == 0);
+#else
       if (!isempty(&t->array[i-1]))
         lc++;
+#endif
     }
     nums[lg] += lc;
     ause += lc;
@@ -607,9 +634,11 @@ static void rehash (lua_State *L, Table *t, const TValue *ek) {
   totaluse = na;  /* all those keys are integer keys */
   totaluse += numusehash(t, nums, &na);  /* count keys in hash part */
   /* count extra key */
-  if (ttisinteger(ek))
-    na += countint(ivalue(ek), nums);
-  totaluse++;
+  if (l_likely(ek != NULL)) {  /* @LuaExt: required for LUA_EXT_API */
+    if (ttisinteger(ek))
+      na += countint(ivalue(ek), nums);
+    totaluse++;
+  }
   /* compute new size for array part */
   asize = computesizes(nums, &na);
   /* resize the table to new computed sizes */
@@ -628,6 +657,9 @@ Table *luaH_new (lua_State *L) {
   Table *t = gco2t(o);
   t->metatable = NULL;
   t->flags = cast_byte(maskflags);  /* table has no metamethod fields */
+#if defined(LUA_EXT_READONLY)
+  setnotreadonly(t);
+#endif
   t->array = NULL;
   t->alimit = 0;
   setnodevector(L, t, 0);
@@ -870,7 +902,7 @@ static lua_Unsigned hash_search (Table *t, lua_Unsigned j) {
   } while (!isempty(luaH_getint(t, j)));  /* repeat until an absent t[j] */
   /* i < j  &&  t[i] present  &&  t[j] absent */
   while (j - i > 1u) {  /* do a binary search between them */
-    lua_Unsigned m = (i + j) / 2;
+    lua_Unsigned m = l_miduns(i, j);  /* @LuaExt: (i + j) / 2; */
     if (isempty(luaH_getint(t, m))) j = m;
     else i = m;
   }
@@ -881,7 +913,7 @@ static lua_Unsigned hash_search (Table *t, lua_Unsigned j) {
 static unsigned int binsearch (const TValue *array, unsigned int i,
                                                     unsigned int j) {
   while (j - i > 1u) {  /* binary search */
-    unsigned int m = (i + j) / 2;
+    unsigned int m = l_miduns(i, j);  /* @LuaExt: (i + j) / 2; */
     if (isempty(&array[m - 1])) j = m;
     else i = m;
   }
@@ -927,7 +959,7 @@ lua_Unsigned luaH_getn (Table *t) {
     /* there must be a boundary before 'limit' */
     if (limit >= 2 && !isempty(&t->array[limit - 2])) {
       /* 'limit - 1' is a boundary; can it be a new limit? */
-      if (ispow2realasize(t) && !ispow2(limit - 1)) {
+      if (ispow2realasize(t) && !l_ispow2(limit - 1)) {
         t->alimit = limit - 1;
         setnorealasize(t);  /* now 'alimit' is not the real size */
       }
@@ -969,6 +1001,116 @@ lua_Unsigned luaH_getn (Table *t) {
 }
 
 
+#if defined(LUA_EXT_READONLY)
+void luaH_setreadonly (Table *t, int readonly) {
+  if (readonly)
+    setreadonly(t);
+  else
+    setnotreadonly(t);
+}
+#endif
+
+#if defined(LUA_EXT_API)
+#include <string.h>
+
+int luaH_type (const Table *t) {
+  if (luaH_realasize(t) == 0)
+    return t->node == dummynode ? LUA_TTEMPTY : LUA_TTHASH;
+  return t->node == dummynode ? LUA_TTARRAY : LUA_TTMIXED;
+}
+
+void luaH_rehash (lua_State *L, Table *t) {
+  rehash(L, t, NULL);
+}
+
+void luaH_clear (lua_State *L, Table *t) {
+  unsigned int asize = luaH_realasize(t);
+  unsigned int i = 0;
+  for (; i < asize; i++)  /* array part */
+    setnilvalue(&t->array[i]);
+
+  if (!isdummy(t)) {  /* traverse hash part */
+    Node *n, *limit = gnode(t, sizenode_t(t));
+    for (n = gnode(t, 0); n < limit; n++)
+      setnilvalue(gval(n));
+  }
+
+  invalidateTMcache(t);
+  /* luaC_barrierback_ not required: all added values are nil/not-collectible */
+  UNUSED(L);
+}
+
+void luaH_compact (lua_State *L, Table *t) {
+  unsigned int oldasize = setlimittosize(t);
+  unsigned int newasize = cast_uint(luaH_getn(t)); /* t->alimit; */
+  if (oldasize != newasize) {
+    TValue *array = luaM_reallocvector(L, t->array, oldasize, newasize, TValue);
+    if (l_likely(array != NULL || newasize == 0)) {
+      t->array = array;
+      t->alimit = newasize;
+      setrealasize(t);
+    }
+    else {  /* allocation failed: raise error */
+      luaM_error(L);
+    }
+  }
+}
+
+void luaH_clone (lua_State *L, const Table *from, Table *to) {
+  const unsigned int from_realasize = luaH_realasize(from);
+  const unsigned int to_realasize = luaH_realasize(to);
+
+  Table newt;  /* to keep the new hash part */
+  newt.alimit = 0;
+  newt.array = NULL;
+  setnodevector(L, &newt, 0);  /* ensure no elements to hash part */
+
+  if (!isdummy(from)) {  /* create new hash part */
+    const size_t size_from = sizenode_t(from);
+    newt.lsizenode = from->lsizenode;
+    newt.node = luaM_newvector(L, size_from, Node);
+    if (l_unlikely(newt.node == NULL))  /* allocation failed? */
+      luaM_error(L);  /* raise error */
+
+    memcpy(newt.node, from->node, size_from * sizeof(Node));
+    if (from->lastfree)
+      newt.lastfree = newt.node + (from->lastfree - from->node);
+  }
+
+  if (from_realasize > 0) {  /* create/reallocate new array part */
+    newt.alimit = from->alimit;
+    newt.array = luaM_reallocvector(L, to->array, to_realasize, from_realasize, TValue);
+    if (l_unlikely(newt.array == NULL)) {  /* allocation failed? */
+      freehash(L, &newt);  /* release new hash part */
+      luaM_error(L);  /* raise error (with array unchanged) */
+    }
+    memcpy(newt.array, from->array, from_realasize * sizeof(TValue));
+  }
+  else if (to->array != NULL) {  /* delete current array */
+    luaM_freearray(L, to->array, to_realasize);
+    to->array = NULL;
+  }
+
+  freehash(L, to);  /* delete previous hash part */
+  to->array = newt.array;
+  to->alimit = newt.alimit;
+  to->node = newt.node;
+  to->lastfree = newt.lastfree;
+  to->lsizenode = newt.lsizenode;
+  to->flags = ((to->flags & ~BITRAS) | (from->flags & BITRAS));
+#if defined(LUA_EXT_READONLY)
+  setnotreadonly(to);
+#endif
+  if (isblack(obj2gco(to)))
+    luaC_barrierback_(L, obj2gco(to));
+  if (from->metatable != NULL) {  /* replace metatable */
+    Table *from_mt = from->metatable;
+    to->metatable = from_mt;
+    luaC_objbarrier(L, obj2gco(to), from_mt);
+    luaC_checkfinalizer(L, obj2gco(to), from_mt);
+  }
+}
+#endif
 
 #if defined(LUA_DEBUG)
 

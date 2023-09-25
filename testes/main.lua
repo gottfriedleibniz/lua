@@ -3,7 +3,7 @@
 -- See Copyright Notice in file all.lua
 
 -- most (all?) tests here assume a reasonable "Unix-like" shell
-if _port then return end
+if _port or os.platform == "wasm" then return end
 
 -- use only "double quotes" inside shell scripts (better change to
 -- run on Windows)
@@ -18,6 +18,11 @@ local arg = arg or ARG
 local prog = os.tmpname()
 local otherprog = os.tmpname()
 local out = os.tmpname()
+if os.platform == "win32" then
+  prog = prog:gsub("%.", "_")
+  otherprog = otherprog:gsub("%.", "_")
+  out = out:gsub("%.", "_")
+end
 
 local progname
 do
@@ -62,7 +67,11 @@ end
 
 
 local function RUN (p, ...)
-  p = string.gsub(p, "lua", '"'..progname..'"', 1)
+  if os.platform == "win32" then
+    p = string.gsub(p, "lua", progname, 1)
+  else
+    p = string.gsub(p, "lua", '"'..progname..'"', 1)
+  end
   local s = string.format(p, ...)
   assert(os.execute(s))
 end
@@ -93,7 +102,11 @@ prepfile[[
 RUN('lua - < %s > %s', prog, out)
 checkout("1\tnil\n")
 
-RUN('echo "print(10)\nprint(2)\n" | lua > %s', out)
+if os.platform == "win32" then
+  RUN('(echo print^^^(10^^^) && echo print^^^(2^^^)) | lua > %s', out)
+else
+  RUN('echo "print(10)\nprint(2)\n" | lua > %s', out)
+end
 checkout("10\n2\n")
 
 
@@ -110,7 +123,7 @@ prepfile("\xEF\xBB\xBF# comment!!\nprint(3)")
 RUN('lua %s > %s', prog, out)
 checkout("3\n")
 
--- bad BOMs
+-- bad BOMs (@LuaExt: avoid 'used by another process...' w/ windows)
 prepfile("\xEF", true)
 NoRun("unexpected symbol", 'lua %s', prog)
 
@@ -125,7 +138,11 @@ NoRun("unexpected symbol", 'lua %s', prog)
 
 
 -- test option '-'
-RUN('echo "print(arg[1])" | lua - -h > %s', out)
+if os.platform == "win32" then
+  RUN('echo print^^^(arg[1]^^^) | lua - -h > %s', out)
+else
+  RUN('echo "print(arg[1])" | lua - -h > %s', out)
+end
 checkout("-h\n")
 
 -- test environment variables used by Lua
@@ -133,53 +150,94 @@ checkout("-h\n")
 prepfile("print(package.path)")
 
 -- test LUA_PATH
-RUN('env LUA_INIT= LUA_PATH=x lua %s > %s', prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT=&& set LUA_PATH=x&& lua %s > %s', prog, out)
+else
+  RUN('env LUA_INIT= LUA_PATH=x lua %s > %s', prog, out)
+end
 checkout("x\n")
 
 -- test LUA_PATH_version
-RUN('env LUA_INIT= LUA_PATH_5_4=y LUA_PATH=x lua %s > %s', prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT=&& set LUA_PATH_5_4=y&& set LUA_PATH=x&& lua %s > %s', prog, out)
+else
+  RUN('env LUA_INIT= LUA_PATH_5_4=y LUA_PATH=x lua %s > %s', prog, out)
+end
 checkout("y\n")
 
 -- test LUA_CPATH
 prepfile("print(package.cpath)")
-RUN('env LUA_INIT= LUA_CPATH=xuxu lua %s > %s', prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT=&& set LUA_CPATH=xuxu&& lua %s > %s', prog, out)
+else
+  RUN('env LUA_INIT= LUA_CPATH=xuxu lua %s > %s', prog, out)
+end
 checkout("xuxu\n")
 
 -- test LUA_CPATH_version
-RUN('env LUA_INIT= LUA_CPATH_5_4=yacc LUA_CPATH=x lua %s > %s', prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT=&& set LUA_CPATH_5_4=yacc&& set LUA_CPATH=x&& lua %s > %s', prog, out)
+else
+  RUN('env LUA_INIT= LUA_CPATH_5_4=yacc LUA_CPATH=x lua %s > %s', prog, out)
+end
 checkout("yacc\n")
 
 -- test LUA_INIT (and its access to 'arg' table)
 prepfile("print(X)")
-RUN('env LUA_INIT="X=tonumber(arg[1])" lua %s 3.2 > %s', prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT=X=tonumber^(arg[1]^) && lua %s 3.2 > %s', prog, out)
+else
+  RUN('env LUA_INIT="X=tonumber(arg[1])" lua %s 3.2 > %s', prog, out)
+end
 checkout("3.2\n")
 
 -- test LUA_INIT_version
 prepfile("print(X)")
-RUN('env LUA_INIT_5_4="X=10" LUA_INIT="X=3" lua %s > %s', prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT_5_4=X=10 && set LUA_INIT=X=3 && lua %s > %s', prog, out)
+else
+  RUN('env LUA_INIT_5_4="X=10" LUA_INIT="X=3" lua %s > %s', prog, out)
+end
 checkout("10\n")
 
 -- test LUA_INIT for files
 prepfile("x = x or 10; print(x); x = x + 1")
-RUN('env LUA_INIT="@%s" lua %s > %s', prog, prog, out)
+if os.platform == "win32" then
+  RUN('set LUA_INIT=@^%s && lua %s > %s', prog, prog, out)
+else
+  RUN('env LUA_INIT="@%s" lua %s > %s', prog, prog, out)
+end
 checkout("10\n11\n")
 
 -- test errors in LUA_INIT
-NoRun('LUA_INIT:1: msg', 'env LUA_INIT="error(\'msg\')" lua')
+if os.platform == "win32" then
+  NoRun('LUA_INIT:1: msg', 'set LUA_INIT=error^(\'msg\'^) && lua')
+else
+  NoRun('LUA_INIT:1: msg', 'env LUA_INIT="error(\'msg\')" lua')
+end
 
 -- test option '-E'
 local defaultpath, defaultCpath
 
 do
   prepfile("print(package.path, package.cpath)")
-  RUN('env LUA_INIT="error(10)" LUA_PATH=xxx LUA_CPATH=xxx lua -E %s > %s',
-       prog, out)
+  if os.platform == "win32" then
+    RUN('set LUA_INIT=error^(10^) && set LUA_PATH=xxx && set LUA_CPATH=xxx && lua -E %s > %s',
+         prog, out)
+  else
+    RUN('env LUA_INIT="error(10)" LUA_PATH=xxx LUA_CPATH=xxx lua -E %s > %s',
+         prog, out)
+  end
   local output = getoutput()
   defaultpath = string.match(output, "^(.-)\t")
   defaultCpath = string.match(output, "\t(.-)$")
 
   -- running with an empty environment
-  RUN('env -i lua %s > %s', prog, out)
+  if os.platform == "win32" or os.platform == "msys" then
+    RUN('set LUA_INIT=&& set LUA_CPATH=&& set LUA_CPATH_5_4=&& set LUA_PATH=&& lua %s > %s', prog, out)
+  else
+    RUN('env -i lua %s > %s', prog, out)
+  end
   local out = getoutput()
   assert(defaultpath == string.match(output, "^(.-)\t"))
   assert(defaultCpath == string.match(output, "\t(.-)$"))
@@ -195,7 +253,11 @@ assert(not string.find(defaultpath, "xxx") and
 -- test replacement of ';;' to default path
 local function convert (p)
   prepfile("print(package.path)")
-  RUN('env LUA_PATH="%s" lua %s > %s', p, prog, out)
+  if os.platform == "win32" then
+    RUN('set LUA_PATH=%s&& lua %s > %s', p, prog, out)
+  else
+    RUN('env LUA_PATH="%s" lua %s > %s', p, prog, out)
+  end
   local expected = getoutput()
   expected = string.sub(expected, 1, -2)   -- cut final end of line
   if string.find(p, ";;") then
@@ -216,19 +278,33 @@ convert("a;b;;c")
 
 -- test -l over multiple libraries
 prepfile("print(1); a=2; return {x=15}")
-prepfile(("print(a); print(_G['%s'].x)"):format(prog), false, otherprog)
-RUN('env LUA_PATH="?;;" lua -l %s -l%s -lstring -l io %s > %s', prog, otherprog, otherprog, out)
+if os.platform == "win32" then
+  prepfile(("print(a); print(_G['%s'].x)"):format(prog:gsub("\\", "\\\\")), false, otherprog)
+  RUN('set LUA_PATH=?;; && lua -l %s -l%s -lstring -l io %s > %s', prog, otherprog, otherprog, out)
+else
+  prepfile(("print(a); print(_G['%s'].x)"):format(prog), false, otherprog)
+  RUN('env LUA_PATH="?;;" lua -l %s -l%s -lstring -l io %s > %s', prog, otherprog, otherprog, out)
+end
 checkout("1\n2\n15\n2\n15\n")
 
--- test explicit global names in -l
+-- test explicit global names in -l @TODO: ensure libreadline (not libedit)
 prepfile("print(str.upper'alo alo', m.max(10, 20))")
-RUN("lua -l 'str=string' '-lm=math' -e 'print(m.sin(0))' %s > %s", prog, out)
+if os.platform == "win32" then
+  RUN("lua -l str=string -lm=math -e print(m.sin(0)) %s > %s", prog, out)
+else
+  RUN("lua -l 'str=string' '-lm=math' -e 'print(m.sin(0))' %s > %s", prog, out)
+end
 checkout("0.0\nALO ALO\t20\n")
 
 
--- test module names with version sufix ("libs/lib2-v2")
-RUN("env LUA_CPATH='./libs/?.so' lua -l lib2-v2 -e 'print(lib2.id())' > %s",
-    out)
+-- test module names with version sufix ("libs/lib2-v2") @TODO: darwin
+if os.platform == "win32" then
+  RUN("set LUA_CPATH=.\\libs\\?.dll&& lua -l lib2-v2 -e print(lib2.id()) > %s", out)
+elseif os.platform == "msys"  or os.platform == "cygwin" then
+  RUN("env LUA_CPATH='./libs/?.dll' lua -l lib2-v2 -e 'print(lib2.id())' > %s", out)
+else
+  RUN("env LUA_CPATH='./libs/?.so' lua -l lib2-v2 -e 'print(lib2.id())' > %s", out)
+end
 checkout("true\n")
 
 
@@ -243,31 +319,59 @@ local a = [[
 ]]
 a = string.format(a, progname)
 prepfile(a)
-RUN('lua "-e " -- %s a b c', prog)   -- "-e " runs an empty command
+if os.platform == "win32" then
+  RUN('lua "-e -- %s a b c"', out)
+else
+  RUN('lua "-e " -- %s a b c', prog)   -- "-e " runs an empty command
+end
 
 -- test 'arg' availability in libraries
 prepfile"assert(arg)"
 prepfile("assert(arg)", false, otherprog)
-RUN('env LUA_PATH="?;;" lua -l%s - < %s', prog, otherprog)
+if os.platform == "win32" then
+  RUN('set LUA_PATH=?;; && lua -l%s - < %s', prog, otherprog)
+else
+  RUN('env LUA_PATH="?;;" lua -l%s - < %s', prog, otherprog)
+end
 
 -- test messing up the 'arg' table
-RUN('echo "print(...)" | lua -e "arg[1] = 100" - > %s', out)
+if os.platform == "win32" then
+  RUN('echo print(...) | lua -e "arg[1] = 100" - > %s', out)
+else
+  RUN('echo "print(...)" | lua -e "arg[1] = 100" - > %s', out)
+end
 checkout("100\n")
-NoRun("'arg' is not a table", 'echo "" | lua -e "arg = 1" -')
+if os.platform == "win32" then
+  NoRun("'arg' is not a table", 'echo[ | lua -e "arg = 1" -')
+else
+  NoRun("'arg' is not a table", 'echo "" | lua -e "arg = 1" -')
+end
 
 -- test error in 'print'
-RUN('echo 10 | lua -e "print=nil" -i > /dev/null 2> %s', out)
+if os.platform == "win32" then
+  RUN('echo 10 | lua -e "print=nil" -i > nul 2> %s', out)
+else
+  RUN('echo 10 | lua -e "print=nil" -i > /dev/null 2> %s', out)
+end
 assert(string.find(getoutput(), "error calling 'print'"))
 
 -- test 'debug.debug'
-RUN('echo "io.stderr:write(1000)\ncont" | lua -e "require\'debug\'.debug()" 2> %s', out)
+if os.platform == "win32" then
+  RUN('cmd /c "(echo io.stderr:write^(1000^) && echo cont)" | lua -e "require\'debug\'.debug()" 2> %s', out)
+else
+  RUN('echo "io.stderr:write(1000)\ncont" | lua -e "require\'debug\'.debug()" 2> %s', out)
+end
 checkout("lua_debug> 1000lua_debug> ")
 
 
 print("testing warnings")
 
 -- no warnings by default
-RUN('echo "io.stderr:write(1); warn[[XXX]]" | lua 2> %s', out)
+if os.platform == "win32" then
+  RUN('echo io.stderr:write^(1^); warn[[XXX]] | lua 2> %s', out)
+else
+  RUN('echo "io.stderr:write(1); warn[[XXX]]" | lua 2> %s', out)
+end
 checkout("1")
 
 prepfile[[
@@ -332,32 +436,48 @@ prepfile[[print(({...})[30])]]
 RUN('lua %s %s > %s', prog, string.rep(" a", 30), out)
 checkout("a\n")
 
-RUN([[lua "-eprint(1)" -ea=3 -e "print(a)" > %s]], out)
+if os.platform == "win32" then
+  RUN([[lua -eprint^(1^) -ea=3 -e print^(a^) > %s]], out)
+else
+  RUN([[lua "-eprint(1)" -ea=3 -e "print(a)" > %s]], out)
+end
 checkout("1\n3\n")
 
--- test iteractive mode
+-- test interactive mode
 prepfile[[
 (6*2-6) -- ===
 a =
 10
 print(a)
 a]]
-RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+if os.platform == "win32" then
+  RUN([[lua -e_PROMPT='' -e_PROMPT2='' -i < %s > %s]], prog, out)
+else
+  RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+end
 checkprogout("6\n10\n10\n\n")
 
 prepfile("a = [[b\nc\nd\ne]]\n=a")
-RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+if os.platform == "win32" then
+  RUN([[lua -e_PROMPT='' -e_PROMPT2='' -i < %s > %s]], prog, out)
+else
+  RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+end
 checkprogout("b\nc\nd\ne\n\n")
 
-local prompt = "alo"
+local prompt = "alo" -- @TODO: ensure libreadline (not libedit)
 prepfile[[ --
 a = 2
 ]]
-RUN([[lua "-e_PROMPT='%s'" -i < %s > %s]], prompt, prog, out)
+if os.platform == "win32" then
+  RUN([[lua -e_PROMPT='%s' -i < %s > %s]], prompt, prog, out)
+else
+  RUN([[lua "-e_PROMPT='%s'" -i < %s > %s]], prompt, prog, out)
+end
 local t = getoutput()
 assert(string.find(t, prompt .. ".*" .. prompt .. ".*" .. prompt))
 
--- using the prompt default
+-- using the prompt default @TODO: ensure libreadline (not libedit)
 prepfile[[ --
 a = 2
 ]]
@@ -367,22 +487,27 @@ prompt = "> "    -- the default
 assert(string.find(t, prompt .. ".*" .. prompt .. ".*" .. prompt))
 
 
--- non-string prompt
-prompt =
-  "local C = 0;\z
-   _PROMPT=setmetatable({},{__tostring = function () \z
-     C = C + 1; return C end})"
-prepfile[[ --
+-- non-string prompt @TODO: ensure libreadline (not libedit)
+if os.platform ~= "win32" -- @TODO
+  and os.platform ~= "darwin"
+  and os.platform ~= "msys"
+  and os.platform ~= "cygwin" then
+  prompt =
+    "local C = 0;\z
+     _PROMPT=setmetatable({},{__tostring = function () \z
+       C = C + 1; return C end})"
+  prepfile[[ --
 a = 2
 ]]
-RUN([[lua -e "%s" -i < %s > %s]], prompt, prog, out)
-local t = getoutput()
-assert(string.find(t, [[
+  RUN([[lua -e "%s" -i < %s > %s]], prompt, prog, out)
+  local t = getoutput()
+  assert(string.find(t, [[
 1 --
 2a = 2
 3
 ]], 1, true))
 
+end
 
 -- test for error objects
 prepfile[[
@@ -416,7 +541,11 @@ assert( a == b )
 do return f( 11 ) end  ]=]
 s = string.gsub(s, ' ', '\n\n')   -- change all spaces for newlines
 prepfile(s)
-RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+if os.platform == "win32" then
+  RUN([[lua -e_PROMPT='' -e_PROMPT2='' -i < %s > %s]], prog, out)
+else
+  RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+end
 checkprogout("101\n13\t22\n\n")
 
 prepfile[[#comment in 1st line without \n at the end]]
@@ -433,7 +562,11 @@ RUN('lua %s', prog)
 checkout('alo')
 
 -- bug in 5.2 beta (extra \0 after version line)
-RUN([[lua -v  -e"print'hello'" > %s]], out)
+if os.platform == "win32" then
+  RUN([[lua -v  -eprint'hello' > %s]], out)
+else
+  RUN([[lua -v  -e"print'hello'" > %s]], out)
+end
 t = getoutput()
 assert(string.find(t, "PUC%-Rio\nhello"))
 
@@ -483,7 +616,11 @@ NoRun("'-l' needs argument", "lua -l")
 
 if T then   -- test library?
   print("testing 'not enough memory' to create a state")
-  NoRun("not enough memory", "env MEMLIMIT=100 lua")
+  if os.platform == "win32" then
+    NoRun("not enough memory", "set MEMLIMIT=100 && lua")
+  else
+    NoRun("not enough memory", "env MEMLIMIT=100 lua")
+  end
 
   -- testing 'warn'
   warn("@store")
@@ -511,7 +648,7 @@ end
 print('+')
 
 print('testing Ctrl C')
-do
+if os.platform ~= "win32" then
   -- interrupt a script
   local function kill (pid)
     return os.execute(string.format('kill -INT %s 2> /dev/null', pid))

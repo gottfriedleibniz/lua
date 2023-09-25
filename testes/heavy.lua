@@ -49,7 +49,7 @@ end
 
 function controlstruct ()
   print("control structure too long")
-  local lim = ((1 << 24) - 2) // 3
+  local lim = ((1 << 24) - 2) // 4 -- @LuaExt: GETTABUP/ADDI/MMBINI/SETTABUP
   local s = string.rep("a = a + 1\n", lim)
   s = "while true do " .. s .. "end"
   assert(load(s))
@@ -74,7 +74,7 @@ end
 function hugeid ()
   print("loading chunk with huge identifier")
   local st, msg = loadrep("a", "chars")
-  assert(not st and 
+  assert(not st and
     (string.find(msg, "lexical element too long") or
      string.find(msg, "not enough memory")))
   print('+')
@@ -158,7 +158,7 @@ function toomanyidx ()
   print("expected error: ", msg)
   print("size:", #a)
 end
-  
+
 
 
 -- teststring()

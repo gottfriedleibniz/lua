@@ -284,6 +284,39 @@ LUA_API void  (lua_rawsetp) (lua_State *L, int idx, const void *p);
 LUA_API int   (lua_setmetatable) (lua_State *L, int objindex);
 LUA_API int   (lua_setiuservalue) (lua_State *L, int idx, int n);
 
+/*
+** readonly API
+*/
+#if defined(LUA_EXT_READONLY)
+LUA_API int   (lua_isreadonly) (lua_State *L, int idx);
+LUA_API void  (lua_setreadonly) (lua_State *L, int idx, int value);
+#endif
+
+/*
+** extended API
+*/
+#if defined(LUA_EXT_API)
+#define LUA_TTEMPTY 0
+#define LUA_TTARRAY 1
+#define LUA_TTHASH  2
+#define LUA_TTMIXED 3
+
+LUA_API int   (lua_tabletype) (lua_State *L, int idx);
+LUA_API void  (lua_filltable) (lua_State *L, int narr, int fillidx);
+LUA_API void  (lua_cleartable) (lua_State *L, int idx);
+LUA_API void  (lua_compacttable) (lua_State *L, int idx);
+LUA_API void  (lua_clonetable) (lua_State *L, int fromidx, int toidx);
+LUA_API void  (lua_rehashtable) (lua_State *L, int idx);
+#endif
+
+/*
+** tagged userdata values
+*/
+#if defined(LUA_EXT_USERTAG)
+#define lua_newusertag(L,s,t)	lua_newusertaguv(L,s,t,0)
+LUA_API void *(lua_newusertaguv) (lua_State *L, size_t sz, int tag, int nuval);
+LUA_API void *(lua_tousertag) (lua_State *L, int idx, int tag);
+#endif
 
 /*
 ** 'load' and 'call' functions (load and run Lua code)
@@ -397,11 +430,17 @@ LUA_API void (lua_closeslot) (lua_State *L, int idx);
 #define lua_tostring(L,i)	lua_tolstring(L, (i), NULL)
 
 
+#if defined (LUA_EXT_API)  /* @LuaExt: useful macro optimizations */
+LUA_API void (lua_insert) (lua_State *L, int idx);
+LUA_API void (lua_remove) (lua_State *L, int idx);
+LUA_API void (lua_replace) (lua_State *L, int idx);
+#else
 #define lua_insert(L,idx)	lua_rotate(L, (idx), 1)
 
 #define lua_remove(L,idx)	(lua_rotate(L, (idx), -1), lua_pop(L, 1))
 
 #define lua_replace(L,idx)	(lua_copy(L, -1, (idx)), lua_pop(L, 1))
+#endif
 
 /* }============================================================== */
 
@@ -492,6 +531,28 @@ struct lua_Debug {
   struct CallInfo *i_ci;  /* active function */
 };
 
+/* }============================================================ */
+
+/*
+** {============================================================
+** WASM Extensions
+** =============================================================
+*/
+
+/*
+@@ LUA_CALL_TRAMPOLINE Use C function call trampolines to mitigate incorrect
+** function pointer casts in emscripten, see https://bugs.python.org/issue47162.
+**
+** All external function type(def)s should have an equivalent stub.
+*/
+#if defined(__EMSCRIPTEN__) && defined(LUA_CALL_TRAMPOLINE)
+  #define lua_cfunction_call(F, L) \
+    lua_CFunctionTrampoline((*(lua_CFunction)(void (*)(void))(F)), (L))
+  LUALIB_API int (lua_CFunctionTrampoline) (lua_CFunction F, lua_State *L);
+#else
+  #define lua_cfunction_call(F, L) (F)((L))
+#endif
+
 /* }====================================================================== */
 
 
@@ -507,6 +568,9 @@ struct lua_Debug {
 
 
 /******************************************************************************
+* LuaGLM
+* Copyright (C) 2023 - gottfriedleibniz
+\******************************************************************************
 * Copyright (C) 1994-2023 Lua.org, PUC-Rio.
 *
 * Permission is hereby granted, free of charge, to any person obtaining

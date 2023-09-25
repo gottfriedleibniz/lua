@@ -230,6 +230,11 @@ LUA_API const char *lua_getlocal (lua_State *L, const lua_Debug *ar, int n) {
     StkId pos = NULL;  /* to avoid warnings */
     name = luaG_findlocal(L, ar->i_ci, n, &pos);
     if (name) {
+#if defined(LUA_EXT_ITERATION)
+      if (l_unlikely(ttisitern(s2v(pos))))
+        setnilvalue(s2v(L->top.p));
+      else
+#endif
       setobjs2s(L, L->top.p, pos);
       api_incr_top(L);
     }
@@ -245,8 +250,20 @@ LUA_API const char *lua_setlocal (lua_State *L, const lua_Debug *ar, int n) {
   lua_lock(L);
   name = luaG_findlocal(L, ar->i_ci, n, &pos);
   if (name) {
+#if defined(LUA_EXT_ITERATION)
+    StkId to = pos + 4;
+#endif
     setobjs2s(L, pos, L->top.p - 1);
     L->top.p--;  /* pop value */
+#if defined(LUA_EXT_ITERATION)
+    if (to > L->top.p) to = L->top.p;
+    while (++pos < to) {
+      if (l_unlikely(ttisitern(s2v(pos)))) {
+        setnilvalue(s2v(pos));
+        break;
+      }
+    }
+#endif
   }
   lua_unlock(L);
   return name;
@@ -834,6 +851,13 @@ l_noret luaG_runerror (lua_State *L, const char *fmt, ...) {
   }
   luaG_errormsg(L);
 }
+
+
+#if defined(LUA_EXT_READONLY)
+l_noret luaG_readonlyerror (lua_State *L) {
+  luaG_runerror(L, "attempting to modify a readonly value");
+}
+#endif
 
 
 /*

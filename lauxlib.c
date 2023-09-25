@@ -348,6 +348,40 @@ LUALIB_API void *luaL_checkudata (lua_State *L, int ud, const char *tname) {
   return p;
 }
 
+#if defined(LUA_EXT_USERTAG)
+#define LUA_TAGS_TABLE	"_TAGS"
+LUALIB_API void *luaL_checkusertag (lua_State *L, int ud, int tag) {
+  void *p = lua_tousertag(L, ud, tag);
+  luaL_argexpected(L, p != NULL, ud, "tagged userdata");
+  return p;
+}
+
+LUALIB_API int luaL_nameusertag(lua_State *L, int tag, const char *name) {
+  if (tag == 0) return luaL_error(L, "default usertag conflict");
+#if USHRT_MAX != UINT_MAX
+  if (tag < 0 || tag > (int)USHRT_MAX) return luaL_error(L, "invalid usertag");
+#endif
+  luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_TAGS_TABLE);
+  switch (lua_geti(L, -1, (lua_Integer)tag)) {
+    case LUA_TNIL: /* register */
+      lua_pushstring(L, name);
+      lua_seti(L, -3, (lua_Integer)tag);
+      break;
+    case LUA_TSTRING: { /* check if registered */
+      const char *prev_name = lua_tostring(L, -1);
+      if (strcmp(name, prev_name) == 0)
+        break;
+      return luaL_error(L, "usertag conflict (%d): %s/%s", tag, prev_name, name);
+    }
+    default: { /* ldblib misuse */
+      return luaL_error(L, "usertag conflict (%d): %s", tag, name);
+    }
+  }
+  lua_pop(L, 2);
+  return 1;
+}
+#endif
+
 /* }====================================================== */
 
 
@@ -502,8 +536,12 @@ static void newbox (lua_State *L) {
   UBox *box = (UBox *)lua_newuserdatauv(L, sizeof(UBox), 0);
   box->box = NULL;
   box->bsize = 0;
-  if (luaL_newmetatable(L, "_UBOX*"))  /* creating metatable? */
+  if (luaL_newmetatable(L, "_UBOX*")) {  /* creating metatable? */
     luaL_setfuncs(L, boxmt, 0);  /* set its metamethods */
+#if defined(LUA_EXT_READONLY)
+    lua_setreadonly(L, -1, 1);
+#endif
+  }
   lua_setmetatable(L, -2);
 }
 
@@ -706,6 +744,7 @@ LUALIB_API void luaL_unref (lua_State *L, int t, int ref) {
 ** =======================================================
 */
 
+#if !defined(LUA_SANDBOX_API)
 typedef struct LoadF {
   int n;  /* number of pre-read characters */
   FILE *f;  /* file being read */
@@ -813,6 +852,7 @@ LUALIB_API int luaL_loadfilex (lua_State *L, const char *filename,
   lua_remove(L, fnameindex);
   return status;
 }
+#endif
 
 
 typedef struct LoadS {
@@ -886,6 +926,41 @@ LUALIB_API lua_Integer luaL_len (lua_State *L, int idx) {
 }
 
 
+#if defined(LUA_SANDBOX_LIBS)
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) \
+  || defined(_MSC_VER)
+#if defined(UINTPTR_MAX)
+typedef uintptr_t l_uintptr;
+#else  /* no 'intptr'? */
+typedef uintmax_t l_uintptr;
+#endif
+#else  /* C89 option */
+typedef size_t l_uintptr;
+#endif
+
+/* Uses MurmurHash3's finalization step on the pointer */
+static int lua_pointer2hex (char *buff, size_t size, const void *p) {
+  if (p == NULL)
+    return l_sprintf(buff, size, "%s", "(null)");
+#if !defined(LUA_SANDBOX_LIBS)
+  return lua_pointer2str(buff, size, p);
+#elif LUA_32BITS
+  l_uintptr x = (l_uintptr)p;
+  x = ((x >> 16) ^ x) * (l_uintptr)0x45d9f3b;
+  x = ((x >> 16) ^ x) * (l_uintptr)0x45d9f3b;
+  x = (x >> 16) ^ x;
+  return l_sprintf(buff, size, "0x%08x", (unsigned int)x);
+#else
+  l_uintptr x = (l_uintptr)p;
+  x = (x ^ (x >> 30)) * (l_uintptr)0xbf58476d1ce4e5b9;
+  x = (x ^ (x >> 27)) * (l_uintptr)0x94d049bb133111eb;
+  x = x ^ (x >> 31);
+  return l_sprintf(buff, size, "0x%016llx", (unsigned long long)x);
+#endif
+}
+#endif
+
+
 LUALIB_API const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
   idx = lua_absindex(L,idx);
   if (luaL_callmeta(L, idx, "__tostring")) {  /* metafield? */
@@ -914,7 +989,13 @@ LUALIB_API const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
         int tt = luaL_getmetafield(L, idx, "__name");  /* try name */
         const char *kind = (tt == LUA_TSTRING) ? lua_tostring(L, -1) :
                                                  luaL_typename(L, idx);
+#if defined(LUA_SANDBOX_LIBS)
+        char buff[32] = { 0 };
+        lua_pointer2hex(buff, sizeof(buff), lua_topointer(L, idx));
+        lua_pushfstring(L, "%s: %s", kind, buff);
+#else
         lua_pushfstring(L, "%s: %p", kind, lua_topointer(L, idx));
+#endif
         if (tt != LUA_TNIL)
           lua_remove(L, -2);  /* remove '__name' */
         break;
@@ -977,6 +1058,10 @@ LUALIB_API void luaL_requiref (lua_State *L, const char *modname,
   lua_getfield(L, -1, modname);  /* LOADED[modname] */
   if (!lua_toboolean(L, -1)) {  /* package not already loaded? */
     lua_pop(L, 1);  /* remove field */
+#if defined(LUA_EXT_READONLY)
+    if (lua_isreadonly(L, -1))
+      luaL_error(L, "readonly " LUA_LOADED_TABLE " table");
+#endif
     lua_pushcfunction(L, openf);
     lua_pushstring(L, modname);  /* argument to open function */
     lua_call(L, 1, 1);  /* call 'openf' to open module */
@@ -985,8 +1070,17 @@ LUALIB_API void luaL_requiref (lua_State *L, const char *modname,
   }
   lua_remove(L, -2);  /* remove LOADED table */
   if (glb) {
+#if defined(LUA_EXT_READONLY)
+    lua_pushglobaltable(L);  /* do not update _G if set to readonly */
+    if (!lua_isreadonly(L, -1)) {
+      lua_pushvalue(L, -2);  /* copy of module */
+      lua_setfield(L, -2, modname);  /* _G[modname] = module */
+    }
+    lua_pop(L, 1);
+#else
     lua_pushvalue(L, -1);  /* copy of module */
     lua_setglobal(L, modname);  /* _G[modname] = module */
+#endif
   }
 }
 
@@ -1110,3 +1204,9 @@ LUALIB_API void luaL_checkversion_ (lua_State *L, lua_Number ver, size_t sz) {
                   (LUAI_UACNUMBER)ver, (LUAI_UACNUMBER)v);
 }
 
+#if defined(__EMSCRIPTEN__) && defined(LUA_CALL_TRAMPOLINE)
+#include <emscripten.h>
+EM_JS(int, lua_CFunctionTrampoline, (lua_CFunction F, lua_State *L), {
+  return wasmTable.get(F)(L);
+});
+#endif

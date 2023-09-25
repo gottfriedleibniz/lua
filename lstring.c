@@ -256,7 +256,11 @@ TString *luaS_new (lua_State *L, const char *str) {
 }
 
 
+#if defined(LUA_EXT_USERTAG)
+Udata *luaS_newudatatag (lua_State *L, size_t s, int nuvalue, int tag) {
+#else
 Udata *luaS_newudata (lua_State *L, size_t s, int nuvalue) {
+#endif
   Udata *u;
   int i;
   GCObject *o;
@@ -264,6 +268,9 @@ Udata *luaS_newudata (lua_State *L, size_t s, int nuvalue) {
     luaM_toobig(L);
   o = luaC_newobj(L, LUA_VUSERDATA, sizeudata(nuvalue, s));
   u = gco2u(o);
+#if defined(LUA_EXT_USERTAG)
+  u->tag = tag;
+#endif
   u->len = s;
   u->nuvalue = nuvalue;
   u->metatable = NULL;

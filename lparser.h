@@ -57,12 +57,20 @@ typedef enum {
   VRELOC,  /* expression can put result in any register;
               info = instruction pc */
   VCALL,  /* expression is a function call; info = instruction pc */
+#if defined(LUA_EXT_SAFENAV)
+  VSCALL,  /* VCALL followed by OP_LOADNIL */
+#endif
   VVARARG  /* vararg expression; info = instruction pc */
 } expkind;
 
 
 #define vkisvar(k)	(VLOCAL <= (k) && (k) <= VINDEXSTR)
 #define vkisindexed(k)	(VINDEXED <= (k) && (k) <= VINDEXSTR)
+#if defined(LUA_EXT_SAFENAV)
+#define vkiscall(k)	((k) == VCALL || (k) == VSCALL)
+#else
+#define vkiscall(k)	((k) == VCALL)
+#endif
 
 
 typedef struct expdesc {

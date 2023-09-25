@@ -38,10 +38,12 @@ assert(T.testC("settop 5; absindex -5; return 1") == 1)
 assert(T.testC("settop 10; absindex 1; return 1") == 1)
 assert(T.testC("settop 10; absindex R; return 1") < -10)
 
+--[[ @LuaExt: will alignment fault on 4-byte aligned systems (e.g., emscripten)
 -- testing alignment
 a = T.d2s(12458954321123.0)
 assert(a == string.pack("d", 12458954321123.0))
 assert(T.s2d(a) == 12458954321123.0)
+--]]
 
 local a,b,c = T.testC("pushnum 1; pushnum 2; pushnum 3; return 2")
 assert(a == 2 and b == 3 and not c)
@@ -796,7 +798,7 @@ collectgarbage()
 assert(type(T.getref(a)) == 'table')
 
 
--- colect in cl the `val' of all collected userdata
+-- collect in cl the `val' of all collected userdata
 local tt = {}
 local cl = {n=0}
 A = nil; B = nil
@@ -815,7 +817,7 @@ F = function (x)
     assert(T.udataval(A) == B)
     debug.getmetatable(A)    -- just access it
   end
-  A = x   -- ressurect userdata
+  A = x   -- resurrect userdata
   B = udval
   return 1,2,3
 end

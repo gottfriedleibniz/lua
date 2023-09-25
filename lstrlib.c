@@ -154,24 +154,48 @@ static int str_rep (lua_State *L) {
   const char *sep = luaL_optlstring(L, 3, "", &lsep);
   if (n <= 0)
     lua_pushliteral(L, "");
+  else if (n == 1)
+    lua_pushvalue(L, 1);
   else if (l_unlikely(l + lsep < l || l + lsep > MAXSIZE / n))
     return luaL_error(L, "resulting string too large");
   else {
     size_t totallen = (size_t)n * l + (size_t)(n - 1) * lsep;
     luaL_Buffer b;
     char *p = luaL_buffinitsize(L, &b, totallen);
-    while (n-- > 1) {  /* first n-1 copies (followed by separator) */
-      memcpy(p, s, l * sizeof(char)); p += l;
-      if (lsep > 0) {  /* empty 'memcpy' is not that cheap */
-        memcpy(p, sep, lsep * sizeof(char));
-        p += lsep;
-      }
-    }
-    memcpy(p, s, l * sizeof(char));  /* last copy (not followed by separator) */
+    const char *src = p;
+    size_t copied = 0, remaining = totallen;
+  #define str_repappend(X, S)                  \
+    LUA_MLM_BEGIN                              \
+    memcpy(p, (X), (S) * sizeof(char));        \
+    p += (S), remaining -= (S), copied += (S); \
+    LUA_MLM_END
+
+    /* @LuaExt: minimize calls to memcpy */
+    str_repappend(s, l);  /* first copy (followed by separator)  */
+    if (lsep > 0)
+      str_repappend(sep, lsep);
+    while (copied < remaining)  /* next 2^ceillog2(n/2) copies */
+      str_repappend(src, copied);
+    memcpy(p, src, remaining);  /* last copy (not followed by separator) */
     luaL_pushresultsize(&b, totallen);
   }
   return 1;
 }
+
+
+#if defined(LUA_EXT_API)
+/* newstr = strtrim(str[, chars]) */
+static int str_trim (lua_State *L) {
+  size_t len = 0;
+  const char *str = luaL_checklstring(L, 1, &len);
+  const char *delimiter = luaL_optstring(L, 2, "\t\n\v\f\r "); /* isspace */
+  const char *back = str + len - 1;
+  while (str <= back && strchr(delimiter, *str)) str++;
+  while (back > str && strchr(delimiter, *back)) back--;
+  lua_pushlstring(L, str, back - str + 1);
+  return 1;
+}
+#endif
 
 
 static int str_byte (lua_State *L) {
@@ -207,6 +231,7 @@ static int str_char (lua_State *L) {
 }
 
 
+#if !defined(LUA_SANDBOX_LIBS)
 /*
 ** Buffer to store the result of 'string.dump'. It must be initialized
 ** after the call to 'lua_dump', to ensure that the function is on the
@@ -241,6 +266,7 @@ static int str_dump (lua_State *L) {
   luaL_pushresult(&state.B);
   return 1;
 }
+#endif
 
 
 
@@ -698,8 +724,9 @@ static const char *lmemfind (const char *s1, size_t l1,
 ** is the range 's'..'e'. If the capture is a string, return
 ** its length and put its address in '*cap'. If it is an integer
 ** (a position), push it on the stack and return CAP_POSITION.
+** @LuaExt: return type changed to ptrdiff_t
 */
-static size_t get_onecapture (MatchState *ms, int i, const char *s,
+static ptrdiff_t get_onecapture (MatchState *ms, int i, const char *s,
                               const char *e, const char **cap) {
   if (i >= ms->level) {
     if (l_unlikely(i != 0))
@@ -1330,6 +1357,7 @@ static int str_format (lua_State *L) {
           nb = l_sprintf(buff, maxitem, form, (LUAI_UACNUMBER)n);
           break;
         }
+#if !defined(LUA_SANDBOX_LIBS)
         case 'p': {
           const void *p = lua_topointer(L, arg);
           checkformat(L, form, L_FMTFLAGSC, 0);
@@ -1340,6 +1368,7 @@ static int str_format (lua_State *L) {
           nb = l_sprintf(buff, maxitem, form, p);
           break;
         }
+#endif
         case 'q': {
           if (form[2] != '\0')  /* modifiers? */
             return luaL_error(L, "specifier '%%q' cannot have modifiers");
@@ -1830,7 +1859,9 @@ static int str_unpack (lua_State *L) {
 static const luaL_Reg strlib[] = {
   {"byte", str_byte},
   {"char", str_char},
+#if !defined(LUA_SANDBOX_LIBS)
   {"dump", str_dump},
+#endif
   {"find", str_find},
   {"format", str_format},
   {"gmatch", gmatch},
@@ -1839,6 +1870,9 @@ static const luaL_Reg strlib[] = {
   {"lower", str_lower},
   {"match", str_match},
   {"rep", str_rep},
+#if defined(LUA_EXT_API)
+  {"trim", str_trim},
+#endif
   {"reverse", str_reverse},
   {"sub", str_sub},
   {"upper", str_upper},
