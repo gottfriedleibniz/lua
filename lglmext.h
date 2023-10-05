@@ -948,14 +948,14 @@ static inline void glmm_sincos(glmm_128 v, glmm_128 *outSin, glmm_128 *outCos) {
 
 static inline glmm_128 glmm_tan(glmm_128 v) {
   /* Range reduction & quadrant */
-  glmm_128i quad = glmm_cvtt(glmm_round(glmm_mul(v, glmm_set1(GLM_2_PIf))));
-  glmm_128i tanOffset = glmm_iand(quad, glmm_iset1(3));
+  glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1(GLM_2_PIf)));
+  glmm_128i tanOffset = glmm_iand(glmm_cvtt(qf), glmm_iset1(3));
   glmm_128 tanMask = glmm_ieq(glmm_iand(tanOffset, glmm_iset1(1)), glmm_isetzero());
 
-  /* Remainder */
-  glmm_128 qf = glmm_icvt(quad);
-  glmm_128 r = glmm_fnmadd(qf, glmm_set1(GLM_PI_2f), v);
-  glmm_128 x = glmm_fnmadd(qf, glmm_set1(7.54978995489e-8f), r);
+  /* "Extended precision modular arithmetic" */
+  glmm_128 fma0 = glmm_fmadd(qf, glmm_set1(-1.5703125f), v);
+  glmm_128 fma1 = glmm_fmadd(qf, glmm_set1(-4.837512969970703e-4f), fma0);
+  glmm_128 x = glmm_fmadd(qf, glmm_set1(-7.549789948768648e-8f), fma1);
   glmm_128 tanx = glmm_tan_poly(x);
 
   /* Invert when the offset is even; avoid division-by-zero */
