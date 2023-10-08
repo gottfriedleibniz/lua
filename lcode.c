@@ -791,7 +791,8 @@ void luaK_dischargevars (FuncState *fs, expdesc *e) {
       **   13e6: 41 c7 06 08 00 00 00    movl   $0x8,(%r14)
       **   13ed: e9 8e 02 00 00          jmp    1680 <luaK_dischargevars+0x2c0>
       */
-#if defined(__NVCOMPILER)
+#if defined(__NVCOMPILER) && (__NVCOMPILER_MAJOR__ < 23 \
+                          || (__NVCOMPILER_MAJOR__ == 23 && __NVCOMPILER_MINOR__ < 9))
       volatile lu_byte ridx = e->u.var.ridx;
       e->u.info = cast_int(ridx);
 #else
