@@ -565,6 +565,7 @@ Uses a modified (GNU make required) version of the makefile
 1. Parser/opcodes/builtins for default libraries.
 1. String parsing/formatting optimizations.
 1. PyBufferProtocol-esque/memory API.
+1. Experiment with table comprehensions (sugar).
 1. Replace quicksort with introsort.
 1. Sandboxing improvements.
 1. Deterministic glsl lib.

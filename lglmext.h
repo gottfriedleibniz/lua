@@ -778,7 +778,7 @@ static inline v128_t glmm_invsqrt(v128_t v) {
 
 /*
 ** {==================================================================
-** trig.h: Constants pulled from either cephes
+** trig.h: Constants pulled from cephes
 ** ===================================================================
 */
 #if defined(CGLM_SIMD)
@@ -1006,11 +1006,12 @@ static inline glmm_128 glmm_atan(glmm_128 v) {
 
 static inline glmm_128 glmm_atan2(glmm_128 y, glmm_128 x) {
   glmm_128 result;
-  glmm_128 xeq0 = glmm_eq(x, glmm_setzero());
-  glmm_128 xge0 = glmm_ge(x, glmm_setzero());
-  glmm_128 xlt0 = glmm_lt(x, glmm_setzero());
-  glmm_128 yeq0 = glmm_eq(y, glmm_setzero());
-  glmm_128 ylt0 = glmm_lt(y, glmm_setzero());
+  glmm_128 zero = glmm_setzero();
+  glmm_128 xeq0 = glmm_eq(x, zero);
+  glmm_128 xge0 = glmm_ge(x, zero);
+  glmm_128 xlt0 = glmm_lt(x, zero);
+  glmm_128 yeq0 = glmm_eq(y, zero);
+  glmm_128 ylt0 = glmm_lt(y, zero);
 
   /* if (x == 0 && y == 0) || (x >= 0 & y == 0) */
   glmm_128 degenerate = glmm_and(xge0, yeq0);

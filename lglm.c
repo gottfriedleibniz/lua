@@ -25,7 +25,7 @@
 #if defined(_MSC_VER)
   #include <intrin.h>
   #pragma intrinsic(_BitScanForward, _BitScanReverse)
-#if defined(_M_X64)
+#if defined(_M_X64) || defined(_M_ARM64)
   #pragma intrinsic(_BitScanForward64, _BitScanReverse64)
 #endif
 #endif
