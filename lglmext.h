@@ -20,7 +20,7 @@
  * @brief round towards even
  */
 CGLM_INLINE float glm_roundf(float x) {
-  return (isinf(x) || isnan(x)) ? x : x - remainderf(x, 1.0f);
+  return isfinite(x) ? x - remainderf(x, 1.0f) : x;
 }
 
 /*!
@@ -78,8 +78,8 @@ CGLM_INLINE float glm_log(float x, float base) {
 typedef uint16_t float16;
 typedef float16 hvec4[4];
 
-/* Cross-platform(-ish) __F16C__, otherwise assume AVX2 implies FP16C */
-#if (defined(__F16C__) && defined(CGLM_SIMD_x86)) || defined(__AVX2__)
+/* @TODO: Replace AVX2 assumption with a #warning directive */
+#if defined(CGLM_SIMD_x86) && (defined(__F16C__) || defined(__AVX2__))
   #define CGLM_HALF_ENABLED 1
 #elif defined(CGLM_SIMD_ARM) && (__ARM_FP & 2) \
   && (defined(__ARM_FP16_FORMAT_IEEE) || defined(__ARM_FP16_FORMAT_ALTERNATIVE))
