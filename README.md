@@ -569,6 +569,7 @@ Uses a modified (GNU make required) version of the makefile
 1. Replace quicksort with introsort.
 1. Sandboxing improvements.
 1. Deterministic glsl lib.
+1. Dual quaternion and GA helpers.
 1. Expand the complex number API.
 
 ## License

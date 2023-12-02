@@ -328,7 +328,7 @@ CGLM_INLINE void glmm_store3u(vec3 dest, __m128 v) {
 }
 
 static inline __m128 glmm_select(__m128 a, __m128 b, __m128 mask) {
-#if defined(__SSE4_1__)
+#if defined(__SSE4_1__) /* mask components are all-or-nothing */
   return _mm_blendv_ps(a, b, mask);
 #else
   return _mm_or_ps(_mm_and_ps(mask, b), _mm_andnot_ps(mask, a));
@@ -515,8 +515,7 @@ static inline float32x4_t glmm_setbits(uint32_t w, uint32_t z, uint32_t y, uint3
 }
 
 static inline float32x4_t glmm_select(float32x4_t a, float32x4_t b, float32x4_t mask) {
-  int32x4_t shr0 = vshrq_n_s32(vreinterpretq_s32_f32(mask), 31);
-  return vbslq_f32(vreinterpretq_u32_s32(shr0), b, a);
+  return vbslq_f32(vreinterpretq_u32_f32(mask), b, a);
 }
 
 static inline bool glmm_all(float32x4_t v) {
@@ -562,15 +561,12 @@ static inline float32x4_t glmm_signbit(float32x4_t v) {
 }
 
 static inline float32x4_t glmm_sign(float32x4_t v) {
-  uint32x4_t sgn0 = vdupq_n_u32(0x80000000u);
-  uint32x4_t and0 = vandq_u32(sgn0, vreinterpretq_u32_f32(v));
-  uint32x4_t or0 = vorrq_u32(and0, vreinterpretq_u32_f32(glmm_set1(1.0f)));
-  return vreinterpretq_f32_u32(or0);
+  uint32x4_t mask = vcgeq_f32(v, glmm_setzero());
+  return glmm_select(glmm_set1(-1.0f), glmm_set1(1.0f), glmm_maskop(mask));
 }
 
 static inline float32x4_t glmm_negate(float32x4_t v) {
-  uint32x4_t sgn0 = vdupq_n_u32(0x80000000u);
-  return vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(v), sgn0));
+  return vnegq_f32(v);
 }
 
 static inline float32x4_t glmm_approx(float32x4_t x, float32x4_t y, float32x4_t eps) {
@@ -727,7 +723,7 @@ static inline float32x4_t glmm_cross3(float32x4_t a, float32x4_t b) {
 #define glmm_store3u glmm_store3
 
 static inline v128_t glmm_select(v128_t a, v128_t b, v128_t mask) {
-  return wasm_v128_bitselect(b, a, wasm_i32x4_shr(mask, 31));
+  return wasm_v128_bitselect(b, a, mask);
 }
 
 static inline bool glmm_all(v128_t v) {
@@ -1219,16 +1215,6 @@ CGLM_INLINE void glm_vec3_cross_simd(vec3 a, vec3 b, vec3 dest) {
 ** vec4.h
 ** ===================================================================
 */
-
-/*!
- * @brief initialize a vec4 using vec2
- */
-CGLM_INLINE void glm_vec4_from2(vec2 v2, float z, float w, vec4 dest) {
-  dest[0] = v2[0];
-  dest[1] = v2[1];
-  dest[2] = z;
-  dest[3] = w;
-}
 
 /*!
  * @brief glm_vec4_eqv using intrinsics

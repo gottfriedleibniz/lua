@@ -1609,27 +1609,18 @@ int luaglm_faceforward(lua_State *L) {
   TValue *o2 = (TValue *)glm_index2value(L, 2);
   TValue *o3 = (TValue *)glm_index2value(L, 3);
   if (ttisvector(o1) && tteq(o1, o2) && tteq(o2, o3)) {
-    CGLM_ALIGN_MAT vec4 v[3];
+    vec4 n, i, nr;
+    glm_vec4_copy(glm_vid(o1), n);
+    glm_vec4_copy(glm_vid(o2), i);
+    glm_vec4_copy(glm_vid(o3), nr);
     switch (vvaltt(o1)) {
-      case LUA_VVECTOR2:
-        glm_vec4_from2(glm_v2(o1), 0.0f, 0.0f, v[0]);
-        glm_vec4_from2(glm_v2(o2), 0.0f, 0.0f, v[1]);
-        glm_vec4_from2(glm_v2(o3), 0.0f, 0.0f, v[2]);
-        break;
-      case LUA_VVECTOR3:
-        glm_vec4(glm_v3(o1), 0.0f, v[0]);
-        glm_vec4(glm_v3(o2), 0.0f, v[1]);
-        glm_vec4(glm_v3(o3), 0.0f, v[2]);
-        break;
-      case LUA_VVECTOR4:
+      case LUA_VVECTOR2: n[2] = n[3] = i[2] = i[3] = nr[2] = nr[3] = 0.0f; break;
+      case LUA_VVECTOR3: n[3] = i[3] = nr[3] = 0.0f; break;
       default: {
-        glm_vec4_copy(glm_vid(o1), v[0]);
-        glm_vec4_copy(glm_vid(o2), v[1]);
-        glm_vec4_copy(glm_vid(o3), v[2]);
         break;
       }
     }
-    glm_pushvid(vvaltt(o1), glm_vec4_faceforward, v[0], v[1], v[2]);
+    glm_pushvid(vvaltt(o1), glm_vec4_faceforward, n, i, nr);
   }
   else if (ttisnumber(o1) && ttisnumber(o2) && ttisnumber(o3)) {
     lua_Number n = nvalue(o1);
@@ -1646,24 +1637,17 @@ int luaglm_reflect(lua_State *L) {
   TValue *o1 = (TValue *)glm_index2value(L, 1);
   TValue *o2 = (TValue *)glm_index2value(L, 2);
   if (ttisvector(o1) && tteq(o1, o2)) {
-    vec4 lhs, rhs;
+    vec4 i, n;
+    glm_vec4_copy(glm_vid(o1), i);
+    glm_vec4_copy(glm_vid(o2), n);
     switch (vvaltt(o1)) {
-      case LUA_VVECTOR2:
-        glm_vec4_from2(glm_v2(o1), 0.0f, 0.0f, lhs);
-        glm_vec4_from2(glm_v2(o2), 0.0f, 0.0f, rhs);
-        break;
-      case LUA_VVECTOR3:
-        glm_vec4(glm_v3(o1), 0.0f, lhs);
-        glm_vec4(glm_v3(o2), 0.0f, rhs);
-        break;
-      case LUA_VVECTOR4:
+      case LUA_VVECTOR2: i[2] = i[3] = n[2] = n[3] = 0.0f; break;
+      case LUA_VVECTOR3: i[3] = n[3] = 0.0f; break;
       default: {
-        glm_vec4_copy(glm_vid(o1), lhs);
-        glm_vec4_copy(glm_vid(o2), rhs);
         break;
       }
     }
-    glm_pushvid(vvaltt(o1), glm_vec4_reflect, lhs, rhs);
+    glm_pushvid(vvaltt(o1), glm_vec4_reflect, i, n);
   }
   else if (ttisnumber(o1) && ttisnumber(o2)) {
     lua_Number i = nvalue(o1);
@@ -1681,24 +1665,17 @@ int luaglm_refract(lua_State *L) {
   TValue *o2 = (TValue *)glm_index2value(L, 2);
   TValue *o3 = (TValue *)glm_index2value(L, 3);
   if (ttisvector(o1) && ttisnumber(o3) && tteq(o1, o2)) {
-    vec4 lhs, rhs;
+    vec4 i, n;
+    glm_vec4_copy(glm_vid(o1), i);
+    glm_vec4_copy(glm_vid(o2), n);
     switch (vvaltt(o1)) {
-      case LUA_VVECTOR2:
-        glm_vec4_from2(glm_v2(o1), 0.0f, 0.0f, lhs);
-        glm_vec4_from2(glm_v2(o2), 0.0f, 0.0f, rhs);
-        break;
-      case LUA_VVECTOR3:
-        glm_vec4(glm_v3(o1), 0.0f, lhs);
-        glm_vec4(glm_v3(o2), 0.0f, rhs);
-        break;
-      case LUA_VVECTOR4:
+      case LUA_VVECTOR2: i[2] = i[3] = n[2] = n[3] = 0.0f; break;
+      case LUA_VVECTOR3: i[3] = n[3] = 0.0f; break;
       default: {
-        glm_vec4_copy(glm_vid(o1), lhs);
-        glm_vec4_copy(glm_vid(o2), rhs);
         break;
       }
     }
-    glm_pushvid(vvaltt(o1), glm_vec4_refract, lhs, rhs, glm_fv(o3));
+    glm_pushvid(vvaltt(o1), glm_vec4_refract, i, n, glm_fv(o3));
   }
   else if (ttisnumber(o1) && ttisnumber(o2) && ttisnumber(o3)) {
     lua_Number i = nvalue(o1);
