@@ -2273,7 +2273,7 @@ int luaglm_to_euler(lua_State *L) {
     mat4 m;
     if (ttisquat(o1))
       glm_quat_mat4(glm_q(o1), m);
-    if (ttismatrix4(o1))
+    else if (ttismatrix4(o1))
       glm_mat4_copy(glm_m4(o1), m);
     else if (ttismatrix3(o1))
       glm_mat4_identity(m), glm_mat4_ins3(m3value(o1), m);
