@@ -952,7 +952,7 @@ Build a quaternion from Euler angles. The axis-ordering is specified by
 character strings: `'xyz', 'xzy', 'yxz', 'yzx', 'zxy', 'zyx'`.
 
 ```lua
-quat = from_euler(vec3 euler, string order)
+quat = from_euler(vec3 euler, string order[, bool extrinsic])
 ```
 
 ### to\_euler
@@ -961,9 +961,9 @@ Extract the Euler angles from a transformation matrix or quaternion using the
 specified rotation sequence.
 
 ```lua
-vec3 = to_euler(quat q, string order)
-vec3 = to_euler(mat4 m, string order)
-vec3 = to_euler(mat3 m, string order)
+vec3 = to_euler(quat q, string order[, bool extrinsic])
+vec3 = to_euler(mat4 m, string order[, bool extrinsic])
+vec3 = to_euler(mat3 m, string order[, bool extrinsic])
 ```
 
 ## 8.Z. Constants

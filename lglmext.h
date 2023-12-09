@@ -3098,22 +3098,24 @@ CGLM_INLINE size_t glm_mat4_hash(mat4 m) {
 
 /*!
  * @brief string to euler axis sequence
+ * @TODO: optimize
  */
-CGLM_INLINE glm_euler_seq glm_parse_euler(const char *s) {
-  glm_euler_seq euler = GLM_EULER_XYZ;
-  if (s[0] == 'x' && s[1] == 'y' && s[2] == 'z')
-    euler = GLM_EULER_XYZ;
-  else if (s[0] == 'x' && s[1] == 'z' && s[2] == 'y')
-    euler = GLM_EULER_XZY;
-  else if (s[0] == 'y' && s[1] == 'x' && s[2] == 'z')
-    euler = GLM_EULER_YXZ;
+CGLM_INLINE glm_euler_seq glm_parse_euler(const char *s, bool extrinsic) {
+  int o1, o2, o3; /* See glm_euler_seq encoding */
+  if (s[0] == 'x' && s[1] == 'z' && s[2] == 'y')
+    o1 = 0, o2 = 2, o3 = 1; /* GLM_EULER_XZY */
   else if (s[0] == 'y' && s[1] == 'z' && s[2] == 'x')
-    euler = GLM_EULER_YZX;
+    o1 = 1, o2 = 2, o3 = 0; /* GLM_EULER_YZX */
+  else if (s[0] == 'y' && s[1] == 'x' && s[2] == 'z')
+    o1 = 1, o2 = 0, o3 = 2; /* GLM_EULER_YXZ */
   else if (s[0] == 'z' && s[1] == 'x' && s[2] == 'y')
-    euler = GLM_EULER_ZXY;
+    o1 = 2, o2 = 0, o3 = 1; /* GLM_EULER_ZXY */
   else if (s[0] == 'z' && s[1] == 'y' && s[2] == 'x')
-    euler = GLM_EULER_ZYX;
-  return euler;
+    o1 = 2, o2 = 1, o3 = 0; /* GLM_EULER_ZYX */
+  else
+    o1 = 0, o2 = 1, o3 = 2; /* GLM_EULER_XYZ */
+  return extrinsic ? (glm_euler_seq)((o3 << 0) | (o2 << 2) | (o1 << 4))
+                   : (glm_euler_seq)((o1 << 0) | (o2 << 2) | (o3 << 4));
 }
 
 /*!

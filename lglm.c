@@ -2258,8 +2258,9 @@ int luaglm_decompose(lua_State *L) {
 int luaglm_from_euler(lua_State *L) {
   TValue *o1 = (TValue *)glm_index2value(L, 1);
   TValue *o2 = (TValue *)glm_index2value(L, 2);
+  TValue *o3 = (TValue *)glm_index2value(L, 3);
   if (ttisvector3(o1) && ttisstring(o2) && tsslen(tsvalue(o2)) == 3) {
-    glm_euler_seq order = glm_parse_euler(getstr(tsvalue(o2)));
+    glm_euler_seq order = glm_parse_euler(getstr(tsvalue(o2)), ttistrue(o3));
     glm_pushquat(glm_euler_by_orderq, glm_v3(o1), order);
     return 1;
   }
@@ -2269,8 +2270,10 @@ int luaglm_from_euler(lua_State *L) {
 int luaglm_to_euler(lua_State *L) {
   TValue *o1 = (TValue *)glm_index2value(L, 1);
   TValue *o2 = (TValue *)glm_index2value(L, 2);
+  TValue *o3 = (TValue *)glm_index2value(L, 3);
   if (ttisstring(o2) && tsslen(tsvalue(o2)) == 3) {
     mat4 m;
+    glm_euler_seq order = glm_parse_euler(getstr(tsvalue(o2)), ttistrue(o3));
     if (ttisquat(o1))
       glm_quat_mat4(glm_q(o1), m);
     else if (ttismatrix4(o1))
@@ -2279,7 +2282,7 @@ int luaglm_to_euler(lua_State *L) {
       glm_mat4_identity(m), glm_mat4_ins3(m3value(o1), m);
     else
       return luaL_argerror(L, 1, GLM_UNEXPECTED);
-    glm_pushvec3(glm_euler_angles_by_order, m, glm_parse_euler(getstr(tsvalue(o2))));
+    glm_pushvec3(glm_euler_angles_by_order, m, order);
     return 1;
   }
   return luaL_argerror(L, 2, "invalid axis order");
