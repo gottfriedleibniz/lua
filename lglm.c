@@ -2302,11 +2302,8 @@ int luaglm_to_euler(lua_State *L) {
 */
 int lglm_UNM(lua_State *L, StkId ra, TValue *rb) {
   switch (ttype(rb)) {
-    case LUA_TVECTOR:
-      if (ttisquat(rb))
-        glm_quat_op(ra, glm_quat_conjugate_simd, glm_q(rb));
-      else /* -vec */
-        glm_vid_op(ra, vvaltt(rb), glm_vec4_negate_to, glm_vid(rb));
+    case LUA_TVECTOR: /* -vec */
+      glm_vid_op(ra, vvaltt(rb), glm_vec4_negate_to, glm_vid(rb));
       break;
     case LUA_TMATRIX: /* -mat */
       glm_mid_op(ra, mvaltt(rb), glm_mat4_negate_to, glm_mid(rb));
