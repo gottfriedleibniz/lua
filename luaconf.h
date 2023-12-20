@@ -942,6 +942,9 @@
 */
 #define LUAGLM_COMPAT_5_4
 
+/* Enable LuaGLM backwards compatibility */
+/*#define LUAGLM_COMPAT_GLM_CPP*/
+
 /* Use half precision floating-point as the vector storage type */
 #if !defined(LUAGLM_HALF_TYPE)
 /* #define LUAGLM_HALF_TYPE */
@@ -954,7 +957,9 @@
 #define LUA_EXT_COMPOUND
 
 /* Enable the defer statement */
+#if !defined(LUAGLM_COMPAT_GLM_CPP)
 #define LUA_EXT_DEFER
+#endif
 
 /* Enable if-expressions */
 #define LUA_EXT_IFEXPR
@@ -998,7 +1003,9 @@
 #define LUA_EXT_CHRONO
 
 /* Import func2close from ltests.h into the base library as 'defer' */
-/* #define LUA_EXT_DEFER_API */
+#if !defined(LUA_EXT_DEFER)
+#define LUA_EXT_DEFER_API
+#endif
 
 /* Support half precision floating-points in string.{pack,unpack} using 'e' as
 ** the format specifier */

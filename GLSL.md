@@ -9,22 +9,22 @@ functions. All functions are declared in the base library (`_G`).
 ### vec
 
 ```lua
--- Create a zero-initialized vector of specified length, e.g., vec3():
-v = vec[2,3,4]()
+-- Create a zero-initialized vector of specified type and length, e.g., vec3():
+v = [i,b]vec[2,3,4]()
 
--- Create a vector of specified length with the given scalar for each component,
--- e.g., vec3(0):
-v = vec[2,3,4](scalar)
+-- Create a vector of specified type and length with the given scalar for each
+-- component, e.g., vec3(0):
+v = [i,b]vec[2,3,4](scalar)
 
--- Create a vector of specified length and value, e.g., vec3(1,2,3):
-v = vec[2,3,4](scalar, ..., scalar)
+-- Create a vector of specified type and length and value, e.g., vec3(1,2,3):
+v = [i,b]vec[2,3,4](scalar, ..., scalar)
 
 -- Generic vector constructor; infers length based on arguments. Rules:
 --   1. A primitive value (number, integer, boolean) will be stored at v[X];
 --   2. A vector, quaternion, or array (of N dimensions) will have its contents
 --      unpacked and stored at v[X], v[X + 1], ..., v[X + N] following x, y, z,
 --      w ordering;
-v = vec(...)
+v = [i,b]vec(...)
 ```
 
 #### vec Examples

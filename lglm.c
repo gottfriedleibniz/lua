@@ -749,6 +749,15 @@ const char *lglm_typename(const TValue *obj) {
   switch (ttypetag(obj)) {
     case LUA_VNUMFLT: return "number";
     case LUA_VNUMINT: return "integer";
+#if defined(LUAGLM_COMPAT_GLM_CPP)
+    case LUA_VVECTOR2: return "vector2";
+    case LUA_VVECTOR3: return "vector3";
+    case LUA_VVECTOR4: return "vector4";
+    case LUA_VQUAT: return "quat";
+    case LUA_VMATRIX2: return "matrix2x2";
+    case LUA_VMATRIX3: return "matrix3x3";
+    case LUA_VMATRIX4: return "matrix4x4";
+#else
     case LUA_VVECTOR2: return "vec2";
     case LUA_VVECTOR3: return "vec3";
     case LUA_VVECTOR4: return "vec4";
@@ -756,6 +765,7 @@ const char *lglm_typename(const TValue *obj) {
     case LUA_VMATRIX2: return "mat2x2";
     case LUA_VMATRIX3: return "mat3x3";
     case LUA_VMATRIX4: return "mat4x4";
+#endif
     default: {
       return "unknown";
     }
@@ -1061,11 +1071,10 @@ static int glm_populateMatrix(lua_State *L, int idx, int desired, mat4 m) {
   return columns;
 }
 
-/* Generic vector construction function. */
-static int glm_createVector(lua_State *L, int desired) {
-  vec4 v;
+/* Generic vector construction function */
+static int glm_constructVector(lua_State *L, int desired, vec4 v) {
   int len = desired ? desired : 3;
-  const int top = lua_gettop(L);
+  int top = lua_gettop(L);
   if (top == 0) /* No arguments: zero vector */
     glm_vec4_zero(v);
   else if (top == 1 && glm_castvalue(glm_index2value(L, 1), &v[0])) /* One argument: broadcast */
@@ -1078,7 +1087,30 @@ static int glm_createVector(lua_State *L, int desired) {
     if ((desired && len != desired) || (!desired && len < 2))
       return luaL_error(L, GLM_UNEXPECTED);
   }
+  return len;
+}
+
+/* Create a single-precision floating-point vector */
+static int glm_createVector(lua_State *L, int desired) {
+  vec4 v;
+  int len = glm_constructVector(L, desired, v);
   glm_pushvid(vvaltag(len), glm_vec4_copy, v);
+  return 1;
+}
+
+/* Create a signed integer vector (as float) */
+static int glm_createVectorInt(lua_State *L, int desired) {
+  vec4 v;
+  int len = glm_constructVector(L, desired, v);
+  glm_pushvid(vvaltag(len), glm_vec4_trunc, v);
+  return 1;
+}
+
+/* Create a boolean vector (as float) */
+static int glm_createVectorBool(lua_State *L, int desired) {
+  vec4 v, zero = GLM_VEC4_ZERO_INIT;
+  int len = glm_constructVector(L, desired, v);
+  glm_pushvid(vvaltag(len), glm_vec4_neqto, v, zero);
   return 1;
 }
 
@@ -1105,6 +1137,14 @@ int luaglm_vec(lua_State *L) { return glm_createVector(L, 0); }
 int luaglm_vec2(lua_State *L) { return glm_createVector(L, 2); }
 int luaglm_vec3(lua_State *L) { return glm_createVector(L, 3); }
 int luaglm_vec4(lua_State *L) { return glm_createVector(L, 4); }
+int luaglm_ivec(lua_State *L) { return glm_createVectorInt(L, 0); }
+int luaglm_ivec2(lua_State *L) { return glm_createVectorInt(L, 2); }
+int luaglm_ivec3(lua_State *L) { return glm_createVectorInt(L, 3); }
+int luaglm_ivec4(lua_State *L) { return glm_createVectorInt(L, 4); }
+int luaglm_bvec(lua_State *L) { return glm_createVectorBool(L, 0); }
+int luaglm_bvec2(lua_State *L) { return glm_createVectorBool(L, 2); }
+int luaglm_bvec3(lua_State *L) { return glm_createVectorBool(L, 3); }
+int luaglm_bvec4(lua_State *L) { return glm_createVectorBool(L, 4); }
 int luaglm_mat2x2(lua_State *L) { return glm_createMatrix(L, 2); }
 int luaglm_mat3x3(lua_State *L) { return glm_createMatrix(L, 3); }
 int luaglm_mat4x4(lua_State *L) { return glm_createMatrix(L, 4); }
@@ -1116,7 +1156,11 @@ int luaglm_quat(lua_State *L) {
   else if (ttisnumber(o1)) {
     TValue *o2 = (TValue *)glm_index2value(L, 2);
     if (ttisvector3(o2)) /* <angle, axis> */
+#if defined(LUAGLM_COMPAT_GLM_CPP) /* degrees for grit-lua compatibility */
+      glm_quatv(q, glm_rad(glm_fv(o1)), glm_v3(o2));
+#else
       glm_quatv(q, glm_fv(o1), glm_v3(o2));
+#endif
     else if (ttisnumber(o2)) { /* <w, x, y, z> */
       float w = glm_fv(o1);
       float x = glm_fv(o2);

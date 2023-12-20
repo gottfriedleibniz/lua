@@ -613,6 +613,14 @@ static const luaL_Reg base_funcs[] = {
   {"vec2", luaglm_vec2},
   {"vec3", luaglm_vec3},
   {"vec4", luaglm_vec4},
+  {"ivec", luaglm_ivec},
+  {"ivec2", luaglm_ivec2},
+  {"ivec3", luaglm_ivec3},
+  {"ivec4", luaglm_ivec4},
+  {"bvec", luaglm_bvec},
+  {"bvec2", luaglm_bvec2},
+  {"bvec3", luaglm_bvec3},
+  {"bvec4", luaglm_bvec4},
   {"mat2", luaglm_mat2x2}, {"mat2x2", luaglm_mat2x2},
   {"mat3", luaglm_mat3x3}, {"mat3x3", luaglm_mat3x3},
   {"mat4", luaglm_mat4x4}, {"mat4x4", luaglm_mat4x4},
@@ -751,6 +759,11 @@ static const luaL_Reg base_funcs[] = {
   {"lerp", luaglm_mix},
   {"inv", luaglm_inverse},
   {"norm", luaglm_normalize},
+#if defined(LUAGLM_COMPAT_GLM_CPP) /* grit-lua Compatibility functions */
+  {"vector2", luaglm_vec2},
+  {"vector3", luaglm_vec3},
+  {"vector4", luaglm_vec4},
+#endif
   {NULL, NULL}
 };
 
