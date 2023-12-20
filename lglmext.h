@@ -384,12 +384,16 @@ static inline __m128 glmm_clamp(__m128 v, __m128 minVal, __m128 maxVal) {
 }
 
 static inline __m128 glmm_invsqrt(__m128 v) {
+#if 1
+  return _mm_div_ps(glmm_set1(1.0f), _mm_sqrt_ps(v));
+#else
   __m128 rsqrt0 = _mm_rsqrt_ps(v);
   __m128 mul0 = _mm_mul_ps(_mm_mul_ps(v, rsqrt0), rsqrt0);
   return _mm_mul_ps(
     _mm_mul_ps(glmm_set1(0.5f), rsqrt0),
     _mm_sub_ps(glmm_set1(3.0f), mul0)
   );
+#endif
 }
 
 static inline __m128 glmm_normalize(__m128 v) {
@@ -590,10 +594,14 @@ static inline float32x4_t glmm_vrsqrteq(float32x4_t v) {
 }
 
 static inline float32x4_t glmm_invsqrt(float32x4_t v) {
+#if CGLM_ARM64
+  return vdivq_f32(glmm_set1(1.0f), vsqrtq_f32(v));
+#else
   float32x4_t s = glmm_vrsqrteq(v);
   s = vmulq_f32(s, vrsqrtsq_f32(vmulq_f32(v, s), s));
   s = vmulq_f32(s, vrsqrtsq_f32(vmulq_f32(v, s), s));
   return s;
+#endif
 }
 
 static inline float32x4_t glmm_sqrt(float32x4_t v) {
@@ -605,7 +613,11 @@ static inline float32x4_t glmm_sqrt(float32x4_t v) {
 }
 
 static inline float32x4_t glmm_clamp(float32x4_t v, float32x4_t minVal, float32x4_t maxVal) {
+#if CGLM_ARM64 /* @TODO: A32 */
+  return vminnmq_f32(vmaxnmq_f32(v, minVal), maxVal);
+#else
   return vminq_f32(vmaxq_f32(v, minVal), maxVal);
+#endif
 }
 
 static inline float32x4_t glmm_round(float32x4_t v) {
@@ -1728,7 +1740,7 @@ CGLM_INLINE void glm_vec4_refract(vec4 i, vec4 n, float eta, vec4 dest) {
 #else
   float dot = glm_vec4_dot(n, i);
   float k = 1.f - eta * eta * (1.f - dot * dot);
-  if (k < 0)
+  if (k < 0.0f)
     glm_vec4_zero(dest);
   else {
     float s = eta * dot + sqrtf(k);
