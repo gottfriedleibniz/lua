@@ -336,13 +336,15 @@ static inline __m128 glmm_select(__m128 a, __m128 b, __m128 mask) {
 }
 
 static inline bool glmm_all(__m128 v) {
-  __m128 cmp0 = _mm_cmpneq_ps(v, _mm_setzero_ps());
-  return _mm_movemask_ps(cmp0) == 0x0F;
+  return _mm_movemask_ps(_mm_cmpneq_ps(v, _mm_setzero_ps())) == 0x0F;
 }
 
 static inline bool glmm_any(__m128 v) {
-  __m128 cmp0 = _mm_cmpneq_ps(v, _mm_setzero_ps());
-  return _mm_movemask_ps(cmp0) != 0;
+  return _mm_movemask_ps(_mm_cmpneq_ps(v, _mm_setzero_ps())) != 0;
+}
+
+static inline bool glmm_eqv(__m128 x, __m128 y) {
+  return _mm_movemask_ps(_mm_cmpeq_ps(x, y)) == 0x0F;
 }
 
 static inline __m128 glmm_isnan(__m128 v) {
@@ -379,10 +381,6 @@ static inline __m256 glmm256_approx(__m256 x, __m256 y, __m256 eps) {
 }
 #endif
 
-static inline __m128 glmm_clamp(__m128 v, __m128 minVal, __m128 maxVal) {
-  return _mm_min_ps(_mm_max_ps(v, minVal), maxVal);
-}
-
 static inline __m128 glmm_invsqrt(__m128 v) {
 #if 1
   return _mm_div_ps(glmm_set1(1.0f), _mm_sqrt_ps(v));
@@ -398,6 +396,10 @@ static inline __m128 glmm_invsqrt(__m128 v) {
 
 static inline __m128 glmm_normalize(__m128 v) {
   return _mm_div_ps(v, _mm_sqrt_ps(glmm_vdot(v, v)));
+}
+
+static inline __m128 glmm_clamp(__m128 v, __m128 minVal, __m128 maxVal) {
+  return _mm_min_ps(_mm_max_ps(v, minVal), maxVal);
 }
 
 static inline __m128 glmm_round(__m128 v) {
@@ -578,13 +580,16 @@ static inline float32x4_t glmm_approx(float32x4_t x, float32x4_t y, float32x4_t 
 }
 
 static inline float32x4_t glmm_vdot(float32x4_t a, float32x4_t b) {
+#if CGLM_ARM64
+  return vdupq_n_f32(vaddvq_f32(vmulq_f32(a, b)));
+#else
   float32x4_t mul0 = vmulq_f32(a, b);
   float32x2_t add0 = vadd_f32(vget_low_f32(mul0), vget_high_f32(mul0));
   float32x2_t add1 = vpadd_f32(add0, add0);
   return vcombine_f32(add1, add1);
+#endif
 }
 
-/* Handle FPRSqrtEstimate edge cases */
 static inline float32x4_t glmm_vrsqrteq(float32x4_t v) {
   float32x4_t rsqrt0 = vrsqrteq_f32(v);
   uint32x4_t inf0 = vdupq_n_u32(0x7F800000u);
@@ -739,13 +744,16 @@ static inline v128_t glmm_select(v128_t a, v128_t b, v128_t mask) {
 }
 
 static inline bool glmm_all(v128_t v) {
-  v128_t cmp0 = wasm_f32x4_ne(v, glmm_setzero());
-  return wasm_i32x4_bitmask(cmp0) == 0x0F;
+  return wasm_i32x4_bitmask(wasm_f32x4_ne(v, glmm_setzero())) == 0x0F;
 }
 
 static inline bool glmm_any(v128_t v) {
   v128_t cmp0 = wasm_f32x4_ne(v, glmm_setzero());
   return wasm_i32x4_bitmask(cmp0) != 0;
+}
+
+static inline bool glmm_eqv(v128_t x, v128_t y) {
+  return wasm_i32x4_bitmask(wasm_f32x4_eq(x, y)) == 0x0F;
 }
 
 static inline v128_t glmm_isnan(v128_t v) {
@@ -1232,9 +1240,8 @@ CGLM_INLINE void glm_vec3_cross_simd(vec3 a, vec3 b, vec3 dest) {
  * @brief glm_vec4_eqv using intrinsics
  */
 CGLM_INLINE bool glm_vec4_eqv_simd(vec4 a, vec4 b) {
-#if defined(CGLM_SIMD_x86)
-  __m128 cmp0 = _mm_cmpeq_ps(glmm_load(a), glmm_load(b));
-  return _mm_movemask_ps(cmp0) == 0xF;
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
+  return glmm_eqv(glmm_load(a), glmm_load(b));
 #else
   return glm_vec4_eqv(a, b);
 #endif
@@ -1271,7 +1278,7 @@ CGLM_INLINE void glm_vec4_sdiv(float s, vec4 v, vec4 dest) {
 
 CGLM_INLINE void glm_vec4_rad(vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
-  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1(GLM_PIf / 180.0f)));
+  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1(0.017453292519943295f)));
 #else
   dest[0] = glm_rad(v[0]);
   dest[1] = glm_rad(v[1]);
@@ -1282,7 +1289,7 @@ CGLM_INLINE void glm_vec4_rad(vec4 v, vec4 dest) {
 
 CGLM_INLINE void glm_vec4_deg(vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
-  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1(180.0f / GLM_PIf)));
+  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1(57.29577951308232f)));
 #else
   dest[0] = glm_deg(v[0]);
   dest[1] = glm_deg(v[1]);
@@ -1695,7 +1702,7 @@ CGLM_INLINE void glm_vec4_fma(vec4 a, vec4 b, vec4 c, vec4 dest) {
 /* 8.5. Geometric Functions */
 
 CGLM_INLINE void glm_vec4_faceforward(vec4 n, vec4 i, vec4 nref, vec4 dest) {
-#if defined(CGLM_SIMD_x86)
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 v = glmm_load(n);
   glmm_128 dot0 = glmm_vdot(glmm_load(nref), glmm_load(i));
   glmm_128 sgn0 = glmm_sign(dot0);
@@ -1710,7 +1717,7 @@ CGLM_INLINE void glm_vec4_faceforward(vec4 n, vec4 i, vec4 nref, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_reflect(vec4 i, vec4 n, vec4 dest) {
-#if defined(CGLM_SIMD_x86)
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 x = glmm_load(i);
   glmm_128 y = glmm_load(n);
   glmm_128 mul0 = glmm_mul(glmm_vdot(y, x), y);
@@ -1723,7 +1730,7 @@ CGLM_INLINE void glm_vec4_reflect(vec4 i, vec4 n, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_refract(vec4 i, vec4 n, float eta, vec4 dest) {
-#if defined(CGLM_SIMD_x86)
+#if defined(CGLM_SIMD_x86) /* @TODO: Improve */
   __m128 x = glmm_load(i);
   __m128 y = glmm_load(n);
   __m128 e = glmm_set1(eta);
@@ -1905,7 +1912,7 @@ CGLM_INLINE void glm_quat_from_basis(vec3 x, vec3 y, vec3 z, versor dest) {
  * @brief convert quaternion to mat4 (@NOTE: Does not implicitly normalize 'v')
  */
 CGLM_INLINE void glm_quat_mat4_simd(versor v, mat4 dest) {
-#if defined(CGLM_SIMD_x86)
+#if defined(CGLM_SIMD_x86) && !defined(CGLM_SIMD_WASM)
   __m128 q = glmm_load(v);
   __m128 q2 = _mm_add_ps(q, q);
   __m128 q_yzxw = glmm_shuff1(q, 3, 0, 2, 1);
@@ -1940,7 +1947,7 @@ CGLM_INLINE void glm_quat_mat4_simd(versor v, mat4 dest) {
  * @brief conjugate of quaternion
  */
 CGLM_INLINE void glm_quat_conjugate_simd(versor q, versor dest) {
-#if defined(CGLM_SIMD_x86)
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 mask = glmm_setbits(0, 0x80000000u, 0x80000000u, 0x80000000u);
   glmm_store(dest, glmm_xor(glmm_load(q), mask));
 #else
@@ -2178,9 +2185,8 @@ CGLM_INLINE void glm_ivec4_shr(ivec4 x, ivec4 y, ivec4 dest) {
  * @brief check if two matrices are identical
  */
 CGLM_INLINE bool glm_mat2_eq(mat2 m1, mat2 m2) {
-#if defined(CGLM_SIMD_x86)
-  __m128 cmp0 = _mm_cmpeq_ps(glmm_load(m1[0]), glmm_load(m2[0]));
-  return _mm_movemask_ps(cmp0) == 0xF;
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
+  return glmm_eqv(glmm_load(m1[0]), glmm_load(m2[0]));
 #else
   return glm_vec2_eqv(m1[0], m2[0]) && glm_vec2_eqv(m1[1], m2[1]);
 #endif
@@ -2504,7 +2510,7 @@ CGLM_INLINE void glm_mat4_neqv(mat4 m1, mat4 m2, vec4 dest) {
  * @brief check if two matrices are approximately equal (with epsilon)
  */
 CGLM_INLINE void glm_mat4_approx(mat4 m1, mat4 m2, float eps, vec4 dest) {
-#if defined(CGLM_SIMD_x86)
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 e = glmm_set1(eps);
   dest[0] = glmm_all(glmm_approx(glmm_load(m1[0]), glmm_load(m2[0]), e));
   dest[1] = glmm_all(glmm_approx(glmm_load(m1[1]), glmm_load(m2[1]), e));
