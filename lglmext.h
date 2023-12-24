@@ -1058,6 +1058,9 @@ static inline glmm_128 glmm_atan2(glmm_128 y, glmm_128 x) {
   return result;
 }
 
+/*!
+ * Alternatives: https://stackoverflow.com/questions/47025373/fastest-implementation-of-the-natural-exponential-function-using-sse
+ */
 static inline glmm_128 glmm_exp(glmm_128 x) {
   glmm_128 n, exp;
   glmm_128i pow;
@@ -1110,8 +1113,29 @@ static inline glmm_128 glmm_log2(glmm_128 x) {
   return glmm_mul(glmm_set1(GLM_LOG2Ef), glmm_log(x));
 }
 
+static inline glmm_128 glmm_sinh(glmm_128 v) { /* @TODO: duplicate glmm_exp domain clamping */
+  glmm_128 half = glmm_set1(0.5f);
+  return glmm_mul(half, glmm_sub(glmm_exp(v), glmm_exp(glmm_negate(v))));
+}
+
+static inline glmm_128 glmm_cosh(glmm_128 v) {
+  glmm_128 half = glmm_set1(0.5f);
+  return glmm_mul(half, glmm_add(glmm_exp(v), glmm_exp(glmm_negate(v))));
+}
+
 static inline glmm_128 glmm_tanh(glmm_128 v) {
   return glmm_tanh_poly(glmm_clamp(v, glmm_set1(-9.0f), glmm_set1(9.0f)));
+}
+
+static inline glmm_128 glmm_asinh(glmm_128 v) {
+  glmm_128 sqrt0 = glmm_sqrt(glmm_add(glmm_mul(v, v), glmm_set1(1.0f)));
+  return glmm_log(glmm_add(v, sqrt0));
+}
+
+static inline glmm_128 glmm_acosh(glmm_128 v) { /* @TODO: domain errors */
+  glmm_128 sqrt0 = glmm_sqrt(glmm_sub(v, glmm_set1(1.0f)));
+  glmm_128 sqrt1 = glmm_sqrt(glmm_add(v, glmm_set1(1.0f)));
+  return glmm_log(glmm_add(v, glmm_mul(sqrt0, sqrt1)));
 }
 
 static inline glmm_128 glmm_atanh(glmm_128 v) {
@@ -1380,17 +1404,25 @@ CGLM_INLINE void glm_vec4_atan2(vec4 y, vec4 x, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_sinh(vec4 v, vec4 dest) {
+#if defined(CGLM_SIMD) && defined(CGLM_USE_APPROX)
+  glmm_store(dest, glmm_sinh(glmm_load(v)));
+#else
   dest[0] = sinhf(v[0]);
   dest[1] = sinhf(v[1]);
   dest[2] = sinhf(v[2]);
   dest[3] = sinhf(v[3]);
+#endif
 }
 
 CGLM_INLINE void glm_vec4_cosh(vec4 v, vec4 dest) {
+#if defined(CGLM_SIMD) && defined(CGLM_USE_APPROX)
+  glmm_store(dest, glmm_cosh(glmm_load(v)));
+#else
   dest[0] = coshf(v[0]);
   dest[1] = coshf(v[1]);
   dest[2] = coshf(v[2]);
   dest[3] = coshf(v[3]);
+#endif
 }
 
 CGLM_INLINE void glm_vec4_tanh(vec4 v, vec4 dest) {
@@ -1405,17 +1437,25 @@ CGLM_INLINE void glm_vec4_tanh(vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_asinh(vec4 v, vec4 dest) {
+#if defined(CGLM_SIMD) && defined(CGLM_USE_APPROX)
+  glmm_store(dest, glmm_asinh(glmm_load(v)));
+#else
   dest[0] = asinhf(v[0]);
   dest[1] = asinhf(v[1]);
   dest[2] = asinhf(v[2]);
   dest[3] = asinhf(v[3]);
+#endif
 }
 
 CGLM_INLINE void glm_vec4_acosh(vec4 v, vec4 dest) {
+#if defined(CGLM_SIMD) && defined(CGLM_USE_APPROX)
+  glmm_store(dest, glmm_acosh(glmm_load(v)));
+#else
   dest[0] = glm_acosh(v[0]);
   dest[1] = glm_acosh(v[1]);
   dest[2] = glm_acosh(v[2]);
   dest[3] = glm_acosh(v[3]);
+#endif
 }
 
 CGLM_INLINE void glm_vec4_atanh(vec4 v, vec4 dest) {
