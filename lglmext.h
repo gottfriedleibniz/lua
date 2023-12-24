@@ -2028,9 +2028,9 @@ CGLM_INLINE void glm_quat_rotatev_simd(versor a, vec3 b, vec3 dest) {
   glmm_128 q = glmm_load(a);
   glmm_128 v = glmm_load3u(b);
   glmm_128 cr0 = glmm_cross3(q, v);
-  glmm_128 fm0 = glmm_fmadd(v, glmm_splat_w(q), cr0);
-  glmm_128 cr1 = glmm_cross3(q, fm0);
-  glmm_128 fm1 = glmm_fmadd(cr1, glmm_set1(2.0f), v);
+  glmm_128 cr1 = glmm_cross3(q, cr0);
+  glmm_128 fm0 = glmm_fmadd(cr0, glmm_splat_w(q), cr1);
+  glmm_128 fm1 = glmm_fmadd(fm0, glmm_set1(2.0f), v);
   glmm_store3(dest, fm1);
 #else
   glm_quat_rotatev(a, b, dest);
