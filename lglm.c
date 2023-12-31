@@ -2326,7 +2326,7 @@ int luaglm_to_euler(lua_State *L) {
       glm_mat4_identity(m), glm_mat4_ins3(m3value(o1), m);
     else
       return luaL_argerror(L, 1, GLM_UNEXPECTED);
-    glm_pushvec3(glm_euler_angles_by_order, m, order);
+    glm_pushvec3(glm_euler_to_order, m, order);
     return 1;
   }
   return luaL_argerror(L, 2, "invalid axis order");

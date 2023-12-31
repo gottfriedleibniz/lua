@@ -3348,7 +3348,7 @@ CGLM_INLINE void glm_euler_angles_zyx(mat4 m, vec3 dest) {
  * @brief extract euler angles
  */
 CGLM_INLINE
-void glm_euler_angles_by_order(mat4 m, glm_euler_seq ord, vec3 dest) {
+void glm_euler_to_order(mat4 m, glm_euler_seq ord, vec3 dest) {
   switch (ord) {
     case GLM_EULER_XYZ: glm_euler_angles_xyz(m, dest); break;
     case GLM_EULER_XZY: glm_euler_angles_xzy(m, dest); break;
@@ -3364,20 +3364,24 @@ void glm_euler_angles_by_order(mat4 m, glm_euler_seq ord, vec3 dest) {
  */
 CGLM_INLINE
 void glm_euler_by_orderq(vec3 angles, glm_euler_seq ord, versor dest) {
-  mat4 m;
-  glm_mat4_zero(m);
-  glm_euler_by_order(angles, ord, m);
-  glm_mat4_quat(m, dest);
+  switch (ord) {
+    case GLM_EULER_XYZ: glm_euler_xyz_quat(angles, dest); break;
+    case GLM_EULER_XZY: glm_euler_xzy_quat(angles, dest); break;
+    case GLM_EULER_YXZ: glm_euler_yxz_quat(angles, dest); break;
+    case GLM_EULER_YZX: glm_euler_yzx_quat(angles, dest); break;
+    case GLM_EULER_ZXY: glm_euler_zxy_quat(angles, dest); break;
+    case GLM_EULER_ZYX: glm_euler_zyx_quat(angles, dest); break;
+  }
 }
 
 /*!
  * @brief extract euler angles from a quaternion
  */
 CGLM_INLINE
-void glm_euler_angles_by_orderq(versor q, glm_euler_seq ord, vec3 dest) {
+void glm_euler_to_orderq(versor q, glm_euler_seq ord, vec3 dest) {
   mat4 m;
   glm_quat_mat4(q, m);
-  glm_euler_angles_by_order(m, ord, dest);
+  glm_euler_to_order(m, ord, dest);
 }
 
 /* }================================================================== */
