@@ -78,14 +78,15 @@ CGLM_INLINE float glm_log(float x, float base) {
 typedef uint16_t float16;
 typedef float16 hvec4[4];
 
-/* @TODO: Replace AVX2 assumption with a #warning directive */
-#if defined(CGLM_SIMD_x86) && (defined(__F16C__) || defined(__AVX2__))
-  #define CGLM_HALF_ENABLED 1
+/* On non-GNU compilers assume AVX2 implies F16C */
+#if !defined(CGLM_SIMD_FP16)
+#if defined(CGLM_SIMD_x86) \
+  && (defined(__F16C__) || (!defined(__GNUC__) && defined(__AVX2__)))
+  #define CGLM_SIMD_FP16 1
 #elif defined(CGLM_SIMD_ARM) && (__ARM_FP & 2) \
   && (defined(__ARM_FP16_FORMAT_IEEE) || defined(__ARM_FP16_FORMAT_ALTERNATIVE))
-  #define CGLM_HALF_ENABLED 1
-#else
-  #define CGLM_HALF_ENABLED 0
+  #define CGLM_SIMD_FP16 1
+#endif
 #endif
 
 /* _mm_storeu_si64: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=87558 */
@@ -102,14 +103,14 @@ typedef float16 hvec4[4];
  * @brief convert float to half float
  */
 CGLM_INLINE float16 glm_to_half(float v) {
-#if defined(CGLM_SIMD_x86) && CGLM_HALF_ENABLED
+#if defined(CGLM_SIMD_x86) && defined(CGLM_SIMD_FP16)
 #if defined(_MSC_VER)
   __m128i cvt0 = _mm_cvtps_ph(_mm_set_ss(v), _MM_FROUND_TO_NEAREST_INT);
   return (float16)_mm_extract_epi16(cvt0, 0);
 #else
   return _cvtss_sh(v, _MM_FROUND_TO_NEAREST_INT);
 #endif
-#elif defined(CGLM_SIMD_ARM) && CGLM_HALF_ENABLED
+#elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
   return vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(glmm_set1(v))), 0);
 #else
   uint32_t a, sign, half;
@@ -143,13 +144,13 @@ CGLM_INLINE float16 glm_to_half(float v) {
  * @brief convert half float to float
  */
 CGLM_INLINE float glm_from_half(float16 v) {
-#if defined(CGLM_SIMD_x86) && CGLM_HALF_ENABLED
+#if defined(CGLM_SIMD_x86) && defined(CGLM_SIMD_FP16)
 #if defined(_MSC_VER)
   return _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128((int)v)));
 #else
   return _cvtsh_ss(v);
 #endif
-#elif defined(CGLM_SIMD_ARM) && CGLM_HALF_ENABLED
+#elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
   return vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(vdup_n_u16(v))), 0);
 #else
   uint32_t a, sign, exponent, mantissa;
@@ -184,9 +185,9 @@ CGLM_INLINE float glm_from_half(float16 v) {
  * @brief initialize a packed vector.
  */
 CGLM_INLINE void glm_vec4_pack(vec4 input, hvec4 dest) {
-#if defined(CGLM_SIMD_x86) && CGLM_HALF_ENABLED && CGLM_HALF_INTRINSICS_x86
+#if defined(CGLM_SIMD_x86) && defined(CGLM_SIMD_FP16) && CGLM_HALF_INTRINSICS_x86
   _mm_storeu_si64(dest, _mm_cvtps_ph(glmm_load(input), _MM_FROUND_TO_NEAREST_INT));
-#elif defined(CGLM_SIMD_ARM) && CGLM_HALF_ENABLED
+#elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
   vst1_u16(dest, vreinterpret_u16_f16(vcvt_f16_f32(glmm_load(input))));
 #else
   dest[0] = glm_to_half(input[0]);
@@ -200,9 +201,9 @@ CGLM_INLINE void glm_vec4_pack(vec4 input, hvec4 dest) {
  * @brief unpack a packed vector.
  */
 CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
-#if defined(CGLM_SIMD_x86) && CGLM_HALF_ENABLED && CGLM_HALF_INTRINSICS_x86
+#if defined(CGLM_SIMD_x86) && defined(CGLM_SIMD_FP16) && CGLM_HALF_INTRINSICS_x86
   glmm_store(dest, _mm_cvtph_ps(_mm_loadu_si64(input)));
-#elif defined(CGLM_SIMD_ARM) && CGLM_HALF_ENABLED
+#elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
   glmm_store(dest, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(input))));
 #else
   dest[0] = glm_from_half(input[0]);
@@ -245,6 +246,9 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 #define glmm_andnot _mm_andnot_ps
 #define glmm_or _mm_or_ps
 #define glmm_xor _mm_xor_ps
+/* @TODO: consistent behaviour between SIMD implementations */
+#define glmm_max _mm_max_ps
+#define glmm_min _mm_min_ps
 
 /* Integer */
 #define glmm_128i __m128i
@@ -476,6 +480,13 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define glmm_and(x, y) glmm_maskop(vandq_u32(vreinterpretq_u32_f32(x), vreinterpretq_u32_f32(y)))
 #define glmm_andnot(x, y) glmm_maskop(vbicq_u32(vreinterpretq_u32_f32(y), vreinterpretq_u32_f32(x)))
 #define glmm_or(x, y) glmm_maskop(vorrq_u32(vreinterpretq_u32_f32(x), vreinterpretq_u32_f32(y)))
+#if CGLM_ARM64
+  #define glmm_max vmaxnmq_f32
+  #define glmm_min vminnmq_f32
+#else
+  #define glmm_max vmaxq_f32
+  #define glmm_min vminq_f32
+#endif
 
 /* Integer */
 #define glmm_128i int32x4_t
@@ -488,7 +499,7 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define glmm_ieq(x, y) glmm_maskop(vceqq_s32((x), (y)))
 #define glmm_iand vandq_s32
 #define glmm_iandnot(x, y) vbicq_s32((y), (x))
-#define glmm_isll(x, imm) vshlq_s32((x), vdupq_n_s32((imm))) /* @TODO: edge-case(s) */
+#define glmm_isll(x, imm) vshlq_s32((x), vdupq_n_s32((imm))) /* @TODO: handle imm edgecase */
 #define glmm_isrl(x, imm) vshlq_s32((x), vdupq_n_s32(-(imm)))
 #define glmm_iload vld1q_s32
 #define glmm_istore vst1q_s32
@@ -618,7 +629,7 @@ static inline float32x4_t glmm_sqrt(float32x4_t v) {
 }
 
 static inline float32x4_t glmm_clamp(float32x4_t v, float32x4_t minVal, float32x4_t maxVal) {
-#if CGLM_ARM64 /* @TODO: A32 */
+#if CGLM_ARM64
   return vminnmq_f32(vmaxnmq_f32(v, minVal), maxVal);
 #else
   return vminq_f32(vmaxq_f32(v, minVal), maxVal);
@@ -719,6 +730,8 @@ static inline float32x4_t glmm_cross3(float32x4_t a, float32x4_t b) {
 #define glmm_andnot(x, y) wasm_v128_andnot((y), (x))
 #define glmm_or wasm_v128_or
 #define glmm_xor wasm_v128_xor
+#define glmm_max(x, y) wasm_f32x4_pmax((y), (x))
+#define glmm_min(x, y) wasm_f32x4_pmin((y), (x))
 
 /* Integer */
 #define glmm_128i v128_t
@@ -731,7 +744,7 @@ static inline float32x4_t glmm_cross3(float32x4_t a, float32x4_t b) {
 #define glmm_ieq wasm_i32x4_eq
 #define glmm_iand wasm_v128_and
 #define glmm_iandnot(x, y) wasm_v128_andnot((y), (x))
-#define glmm_isll wasm_i32x4_shl /* @TODO: edge-case(s) */
+#define glmm_isll wasm_i32x4_shl /* @TODO: handle imm edgecase */
 #define glmm_isrl wasm_u32x4_shr
 
 #define glmm_load2(p) wasm_v128_load64_zero((p))
@@ -916,7 +929,8 @@ static inline glmm_128 glmm_log_poly(glmm_128 x) {
   return glmm_mul(glmm_mul(x, z), x2);
 }
 
-static inline glmm_128 glmm_frexp(glmm_128 v, glmm_128 *e) { /* @TODO: Inf/NaN */
+/* @TODO: Inf/NaN handling */
+static inline glmm_128 glmm_frexp(glmm_128 v, glmm_128 *e) {
   glmm_128 num;
   glmm_128 exp_mask = glmm_setbits1(0x7F800000u);
   glmm_128 mant_mask = glmm_setbits1(0x807FFFFFu);
@@ -982,6 +996,7 @@ static inline glmm_128 glmm_tan(glmm_128 v) {
 }
 
 static inline glmm_128 glmm_acos(glmm_128 v) {
+  /* Follow glm_acos(float) and sanitize domain */
   glmm_128 x = glmm_abs(glmm_clamp(v, glmm_set1(-1.0f), glmm_set1(1.0f)));
   glmm_128 t = glmm_sqrt(glmm_sub(glmm_set1(1.0f), x));
   glmm_128 pos = glmm_mul(t, glmm_acos_poly(x));
@@ -1033,20 +1048,21 @@ static inline glmm_128 glmm_atan2(glmm_128 y, glmm_128 x) {
   glmm_128 degenerate = glmm_and(xge0, yeq0);
 
   /* if (x == 0 && y != 0) return +/- GLM_PI_2 */
-  /* if (x < 0 && y == 0) return GLM_PI */
   glmm_128 zero_mask = glmm_andnot(yeq0, xeq0);
   glmm_128 zero_sign = glmm_xor(glmm_signbit(ylt0), glmm_set1(GLM_PI_2f));
   glmm_128 zero_case = glmm_and(zero_sign, zero_mask);
+
+  /* if (x < 0 && y == 0) return GLM_PI */
   glmm_128 nero_case = glmm_and(glmm_and(xlt0, yeq0), glmm_set1(GLM_PIf));
 
   /* if (x < 0 && y < 0) sign swap */
   glmm_128 shift_mask = glmm_signbit(glmm_and(xlt0, ylt0));
   glmm_128 shift = glmm_and(xlt0, glmm_xor(shift_mask, glmm_set1(GLM_PIf)));
 
-  /* atan(y/x) */
+  /* atan(y/x); avoiding division-by-zero  */
   glmm_128 cmp0 = glmm_eq(glmm_or(xeq0, yeq0), glmm_setzero());
   glmm_128 denom = glmm_add(x, glmm_and(xeq0, glmm_set1(1.0f)));
-  glmm_128 atan = glmm_atan(glmm_div(y, denom)); /* avoid division-by-zero */
+  glmm_128 atan = glmm_atan(glmm_div(y, denom));
   atan = glmm_andnot(zero_mask, glmm_add(atan, shift));
   atan = glmm_and(cmp0, atan); /* make zero-if-zero */
 
@@ -1113,7 +1129,7 @@ static inline glmm_128 glmm_log2(glmm_128 x) {
   return glmm_mul(glmm_set1(GLM_LOG2Ef), glmm_log(x));
 }
 
-static inline glmm_128 glmm_sinh(glmm_128 v) { /* @TODO: duplicate glmm_exp domain clamping */
+static inline glmm_128 glmm_sinh(glmm_128 v) {
   glmm_128 half = glmm_set1(0.5f);
   return glmm_mul(half, glmm_sub(glmm_exp(v), glmm_exp(glmm_negate(v))));
 }
@@ -1132,25 +1148,37 @@ static inline glmm_128 glmm_asinh(glmm_128 v) {
   return glmm_log(glmm_add(v, sqrt0));
 }
 
-static inline glmm_128 glmm_acosh(glmm_128 v) { /* @TODO: domain errors */
-  glmm_128 sqrt0 = glmm_sqrt(glmm_sub(v, glmm_set1(1.0f)));
-  glmm_128 sqrt1 = glmm_sqrt(glmm_add(v, glmm_set1(1.0f)));
-  return glmm_log(glmm_add(v, glmm_mul(sqrt0, sqrt1)));
+static inline glmm_128 glmm_acosh(glmm_128 v) {
+  glmm_128 one = glmm_set1(1.0f);
+  glmm_128 x = glmm_max(v, one);
+  glmm_128 sqrt0 = glmm_sqrt(glmm_sub(x, one));
+  glmm_128 sqrt1 = glmm_sqrt(glmm_add(x, one));
+  return glmm_log(glmm_add(x, glmm_mul(sqrt0, sqrt1)));
 }
 
 static inline glmm_128 glmm_atanh(glmm_128 v) {
   glmm_128 one = glmm_set1(1.0f);
   glmm_128 half = glmm_set1(0.5f);
+
+  /* Follow glm_atanh(float) and sanitize domain */
   glmm_128 x = glmm_clamp(v, glmm_set1(-1.0f), one);
 
+  /* For |v| >= 1.0 return +/-inf */
+  glmm_128 sgn0 = glmm_signbit(x);
+  glmm_128 inf = glmm_or(sgn0, glmm_setbits1(0x7F800000u));
+
   /* For [-0.5, 0.5] use polynomial */
-  glmm_128 half_mask = glmm_le(glmm_abs(x), half);
   glmm_128 atanh = glmm_atanh_poly(x);
 
-  /* Otherwise use 0.5 * log((1 + x) / (1 - x)); @TODO: avoid division-by-zero */
-  glmm_128 div0 = glmm_div(glmm_add(one, x), glmm_sub(one, x));
-  glmm_128 mul0 = glmm_mul(half, glmm_log(div0));
-  return glmm_select(mul0, atanh, half_mask);
+  /* Otherwise use 0.5 * log((1 + x) / (1 - x)); avoiding division-by-zero */
+  glmm_128 add0 = glmm_add(one, x);
+  glmm_128 sub0 = glmm_sub(one, glmm_and(glmm_neq(one, x), x));
+  glmm_128 mul0 = glmm_mul(half, glmm_log(glmm_div(add0, sub0)));
+
+  /* Blend result */
+  glmm_128 abs0 = glmm_xor(v, sgn0);
+  glmm_128 sel0 = glmm_select(mul0, atanh, glmm_le(abs0, half));
+  return glmm_select(inf, sel0, glmm_lt(abs0, one));
 }
 #endif
 /* }================================================================== */
@@ -1770,20 +1798,18 @@ CGLM_INLINE void glm_vec4_reflect(vec4 i, vec4 n, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_refract(vec4 i, vec4 n, float eta, vec4 dest) {
-#if defined(CGLM_SIMD_x86) /* @TODO: Improve */
-  __m128 x = glmm_load(i);
-  __m128 y = glmm_load(n);
-  __m128 e = glmm_set1(eta);
-  __m128 one = glmm_set1(1.0f);
-  __m128 dot0 = glmm_vdot(y, x);
-  __m128 sub0 = glmm_fnmadd(dot0, dot0, one);
-  __m128 k = glmm_fnmadd(_mm_mul_ps(e, e), sub0, one);
-  if (_mm_movemask_ps(_mm_cmplt_ps(k, _mm_setzero_ps())) == 0x0F)
-    glmm_store(dest, _mm_setzero_ps());
-  else {
-    __m128 mad0 = glmm_fmadd(e, dot0, _mm_sqrt_ps(k));
-    glmm_store(dest, glmm_fnmadd(mad0, y, _mm_mul_ps(e, x)));
-  }
+#if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
+  glmm_128 x = glmm_load(i);
+  glmm_128 y = glmm_load(n);
+  glmm_128 e = glmm_set1(eta);
+  glmm_128 one = glmm_set1(1.0f);
+  glmm_128 zero = glmm_setzero();
+  glmm_128 dot0 = glmm_vdot(y, x);
+  glmm_128 sub0 = glmm_fnmadd(dot0, dot0, one);
+  glmm_128 k = glmm_fnmadd(glmm_mul(e, e), sub0, one);
+  glmm_128 mad0 = glmm_fmadd(e, dot0, glmm_sqrt(glmm_abs(k)));
+  glmm_128 mad1 = glmm_fnmadd(mad0, y, glmm_mul(e, x));
+  glmm_store(dest, glmm_select(zero, mad1, glmm_ge(k, zero)));
 #else
   float dot = glm_vec4_dot(n, i);
   float k = 1.f - eta * eta * (1.f - dot * dot);
@@ -3156,7 +3182,6 @@ CGLM_INLINE size_t glm_mat4_hash(mat4 m) {
 
 /*!
  * @brief string to euler axis sequence
- * @TODO: optimize
  */
 CGLM_INLINE glm_euler_seq glm_parse_euler(const char *s, bool extrinsic) {
   int o1, o2, o3; /* See glm_euler_seq encoding */

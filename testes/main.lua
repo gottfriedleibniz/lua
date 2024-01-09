@@ -490,6 +490,7 @@ assert(string.find(t, prompt .. ".*" .. prompt .. ".*" .. prompt))
 -- non-string prompt @TODO: ensure libreadline (not libedit)
 if os.platform ~= "win32" -- @TODO
   and os.platform ~= "darwin"
+  and os.platform ~= "sunos"
   and os.platform ~= "msys"
   and os.platform ~= "cygwin" then
   prompt =

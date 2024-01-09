@@ -326,9 +326,14 @@ do print("testing 'format %a %A'")
   assert(string.find(string.format("%a", -0.0), "^%-0x0%.?0*p%+?0$"))
 
   if not _port then   -- test inf, -inf, NaN, and -0.0
-    assert(string.find(string.format("%a", 1/0), "^inf"))
+    if os.platform == "sunos" then -- Infinity/-INFINITY/NaN
+      assert(string.find(string.format("%a", 1/0), "^Inf"))
+      assert(string.find(string.format("%a", 0/0), "^%-?NaN"))
+    else
+      assert(string.find(string.format("%a", 1/0), "^inf"))
+      assert(string.find(string.format("%a", 0/0), "^%-?nan"))
+    end
     assert(string.find(string.format("%A", -1/0), "^%-INF"))
-    assert(string.find(string.format("%a", 0/0), "^%-?nan"))
     assert(string.find(string.format("%a", -0.0), "^%-0x0"))
   end
   

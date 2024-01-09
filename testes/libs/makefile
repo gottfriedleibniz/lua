@@ -26,8 +26,8 @@ clean:
 
 .PHONY: build clean bsd freebsd netbsd openbsd linux posix sunos msys cygwin mingw windows emscripten
 
-bsd freebsd netbsd openbsd linux posix: CFLAGS+= -fPIC
-bsd freebsd netbsd openbsd linux posix: $(TESTS:=.so)
+bsd freebsd netbsd openbsd linux posix sunos: CFLAGS+= -fPIC
+bsd freebsd netbsd openbsd linux posix sunos: $(TESTS:=.so)
 
 msys cygwin: SYSCFLAGS= -D_WIN32 -DLUA_USE_POSIX -DLUA_BUILD_AS_DLL
 msys cygwin: LDFLAGS+= -L. -L$(LUA_DIR) -llua54

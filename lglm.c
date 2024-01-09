@@ -307,7 +307,7 @@ static int swizzle(const luai_Float4 *v, int len, const char *key, luai_Float4 *
   for (; i < 4 && key[i] != '\0'; ++i) {
     lu_byte n = luaO_vecindex[cast_byte(key[i])];
     if (n < len)
-      out->v4[i] = v->v4[n]; /* @TODO: vseti/vgeti */
+      out->v4[i] = v->v4[n]; /* vseti/vgeti */
     else {
       return 0;
     }
@@ -438,7 +438,7 @@ int lvec_concat(const TValue *obj, const TValue *value, StkId res) {
   else if (ttisvector(value)) {
     lu_tag i, other_len = ttvlen(value);
     for (i = 0; i < other_len && len < 4; ++i) {
-      result.v4[len++] = vvalue_(value).v4[i]; /* @TODO: vseti/vgeti */
+      result.v4[len++] = vvalue_(value).v4[i]; /* vseti/vgeti */
     }
   }
   else {
