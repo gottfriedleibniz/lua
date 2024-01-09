@@ -905,6 +905,15 @@
 #endif
 
 /*
+@@ LUA_MUSTTAIL indicate that the compiler must generate a tail call
+*/
+#if LUA_HAS_ATTRIBUTE(musttail)
+  #define LUA_MUSTTAIL __attribute__((musttail))
+#else
+  #define LUA_MUSTTAIL /* TAILCALL */
+#endif
+
+/*
 @@ LUA_FALLTHROUGH inform the compiler a fallthrough is intentional
 */
 #if defined(__cplusplus) && __cplusplus >= 201703
