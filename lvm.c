@@ -1181,14 +1181,23 @@ void luaV_finishOp (lua_State *L) {
     lua_State *L, const Instruction *pc, CallInfo *ci, StkId base, \
       Instruction i, int trap
 
-  typedef void luaV_OpResult;
-  typedef luaV_OpResult (*LUA_PRESERVE_NONE lua_OpFunc)(LUAV_PARAMS);
-  static inline LUA_PRESERVE_NONE luaV_OpResult(luaV_dispatch)(LUAV_PARAMS);
-  static inline LUA_PRESERVE_NONE luaV_OpResult(luaV_newframe)(LUAV_PARAMS);
+  #define LUAV_CALLCONV LUA_PRESERVE_NONE
+  #define LUAV_TAILCALL LUA_MUSTTAIL return
+  #if LUA_HAS_ATTRIBUTE(musttail)
+    #define LUAV_TAILEND return
+    typedef void luaV_OpResult;
+  #else
+    #define LUAV_TAILEND return NULL
+    typedef void *luaV_OpResult;
+  #endif
+
+  typedef luaV_OpResult (*LUAV_CALLCONV lua_OpFunc)(LUAV_PARAMS);
+  static inline LUAV_CALLCONV luaV_OpResult(luaV_dispatch)(LUAV_PARAMS);
+  static inline LUAV_CALLCONV luaV_OpResult(luaV_newframe)(LUAV_PARAMS);
 
   #define vmfunc(l)  luaV_##l
   #define vmlabel(l) luaV_OP_##l,
-  #define vmcase(NAME) static LUA_PRESERVE_NONE luaV_OpResult(vmfunc(NAME))(LUAV_PARAMS)
+  #define vmcase(NAME) static LUAV_CALLCONV luaV_OpResult(vmfunc(NAME))(LUAV_PARAMS)
 
   /* Stub to denote that an opcode may call an external/API function and spill,
   ** or reorder, registers: the interaction w/ preserve_none needs to be
@@ -1201,13 +1210,13 @@ void luaV_finishOp (lua_State *L) {
 
   #define vmbegin(OP)
   #define vmend(OP)
-  #define vmgoto(OP) LUA_MUSTTAIL return vmfunc(OP)(LUAV_ARGS)
-  #define vmbreak LUA_MUSTTAIL return luaV_dispatch(LUAV_ARGS)
+  #define vmgoto(OP) LUAV_TAILCALL vmfunc(OP)(LUAV_ARGS)
+  #define vmbreak LUAV_TAILCALL luaV_dispatch(LUAV_ARGS)
 
-  #define vmframe_new(nci) LUA_MUSTTAIL return luaV_newframe(LUAV_FRAME(nci))
+  #define vmframe_new(nci) LUAV_TAILCALL luaV_newframe(LUAV_FRAME(nci))
   #define vmframe_start(L, nci) trap = (L)->hookmask; vmframe_new(nci)
   #define vmframe_return(L, nci) vmframe_new(nci)
-  #define vmframe_end(L, nci) return
+  #define vmframe_end(L, nci) LUAV_TAILEND
 
   #include "lvm_impl.h"
   static lua_OpFunc luaV_opfuncs[128] = {
@@ -1226,17 +1235,17 @@ void luaV_finishOp (lua_State *L) {
     vmlabel(INVALID) /* 128 */
   };
 
-  static inline LUA_PRESERVE_NONE luaV_OpResult luaV_dispatch(LUAV_PARAMS) {
+  static inline LUAV_CALLCONV luaV_OpResult luaV_dispatch(LUAV_PARAMS) {
     vmfetch();
-    LUA_MUSTTAIL return luaV_opfuncs[GET_OPCODE(i)](LUAV_ARGS);
+    LUAV_TAILCALL luaV_opfuncs[GET_OPCODE(i)](LUAV_ARGS);
   }
 
-  static inline LUA_PRESERVE_NONE luaV_OpResult luaV_newframe(LUAV_PARAMS) {
+  static inline LUAV_CALLCONV luaV_OpResult luaV_newframe(LUAV_PARAMS) {
     pc = ci->u.l.savedpc;
     if (l_unlikely(trap))
       trap = luaG_tracecall(L);
     base = ci->func.p + 1;
-    LUA_MUSTTAIL return luaV_dispatch(LUAV_ARGS);
+    LUAV_TAILCALL luaV_dispatch(LUAV_ARGS);
   }
 #else
 #define vmcase_spill vmcase
