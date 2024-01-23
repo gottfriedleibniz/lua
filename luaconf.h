@@ -858,6 +858,16 @@
 #endif
 
 /*
+@@ LUA_FLATTEN indicate calls within the function should be inlined unless
+** impossible to do so
+*/
+#if LUA_HAS_ATTRIBUTE(flatten)
+  #define LUA_FLATTEN __attribute__((flatten))
+#else
+  #define LUA_FLATTEN /* FLATTEN */
+#endif
+
+/*
 @@ LUA_NORETURN indicate function shall not return to its caller
 */
 #if defined(_MSC_VER) && _MSC_VER >= 1200
@@ -866,6 +876,42 @@
   #define LUA_NORETURN __attribute__((__noreturn__))
 #else
   #define LUA_NORETURN
+#endif
+
+/*
+@@ LUA_MUSTTAIL indicate that the compiler must generate a tail call
+*/
+#if LUA_HAS_ATTRIBUTE(musttail)
+  #define LUA_MUSTTAIL __attribute__((musttail))
+#else
+  #define LUA_MUSTTAIL /* TAILCALL */
+#endif
+
+/*
+@@ https://github.com/llvm/llvm-project/pull/76868
+*/
+#if LUA_HAS_ATTRIBUTE(preserve_none) && defined(LUA_EXT_TAILVM)
+  #define LUA_PRESERVE_NONE __attribute__((preserve_none))
+#else
+  #define LUA_PRESERVE_NONE /* PRESERVE_NONE */
+#endif
+
+/*
+@@ https://clang.llvm.org/docs/AttributeReference.html#preserve-most
+*/
+#if LUA_HAS_ATTRIBUTE(preserve_most) && defined(LUA_EXT_TAILVM)
+  #define LUA_PRESERVE_MOST __attribute__((preserve_most))
+#else
+  #define LUA_PRESERVE_MOST /* PRESERVE_MOST */
+#endif
+
+/*
+@@ https://clang.llvm.org/docs/AttributeReference.html#preserve-all
+*/
+#if LUA_HAS_ATTRIBUTE(preserve_most) && defined(LUA_EXT_TAILVM)
+  #define LUA_PRESERVE_ALL __attribute__((preserve_all))
+#else
+  #define LUA_PRESERVE_ALL /* PRESERVE_ALL */
 #endif
 
 /*

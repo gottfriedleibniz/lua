@@ -23,6 +23,7 @@ vmcase(OP_LOADF) {
 }
 vmcase(OP_LOADK) {
   vmbegin(OP_LOADK)
+  vmrequires_k
   StkId ra = RA(i);
   TValue *rb = k + GETARG_Bx(i);
   setobj2s(L, ra, rb);
@@ -31,6 +32,7 @@ vmcase(OP_LOADK) {
 }
 vmcase(OP_LOADKX) {
   vmbegin(OP_LOADKX)
+  vmrequires_k
   StkId ra = RA(i);
   TValue *rb;
   rb = k + GETARG_Ax(*pc); pc++;
@@ -72,14 +74,16 @@ vmcase(OP_LOADNIL) {
 }
 vmcase(OP_GETUPVAL) {
   vmbegin(OP_GETUPVAL)
+  vmrequires_cl
   StkId ra = RA(i);
   int b = GETARG_B(i);
   setobj2s(L, ra, cl->upvals[b]->v.p);
   vmbreak;
   vmend(OP_GETUPVAL)
 }
-vmcase(OP_SETUPVAL) {
+vmcase_spill(OP_SETUPVAL) {
   vmbegin(OP_SETUPVAL)
+  vmrequires_cl
   StkId ra = RA(i);
   UpVal *uv = cl->upvals[GETARG_B(i)];
   setobj(L, uv->v.p, s2v(ra));
@@ -87,8 +91,9 @@ vmcase(OP_SETUPVAL) {
   vmbreak;
   vmend(OP_SETUPVAL)
 }
-vmcase(OP_GETTABUP) {
+vmcase_spill(OP_GETTABUP) {
   vmbegin(OP_GETTABUP)
+  vmrequires_k
   StkId ra = RA(i);
   const TValue *slot;
   TValue *upval = cl->upvals[GETARG_B(i)]->v.p;
@@ -102,7 +107,7 @@ vmcase(OP_GETTABUP) {
   vmbreak;
   vmend(OP_GETTABUP)
 }
-vmcase(OP_GETTABLE) {
+vmcase_spill(OP_GETTABLE) {
   vmbegin(OP_GETTABLE)
   StkId ra = RA(i);
   const TValue *slot;
@@ -119,7 +124,7 @@ vmcase(OP_GETTABLE) {
   vmbreak;
   vmend(OP_GETTABLE)
 }
-vmcase(OP_GETI) {
+vmcase_spill(OP_GETI) {
   vmbegin(OP_GETI)
   StkId ra = RA(i);
   const TValue *slot;
@@ -136,8 +141,9 @@ vmcase(OP_GETI) {
   vmbreak;
   vmend(OP_GETI)
 }
-vmcase(OP_GETFIELD) {
+vmcase_spill(OP_GETFIELD) {
   vmbegin(OP_GETFIELD)
+  vmrequires_k
   StkId ra = RA(i);
   const TValue *slot;
   TValue *rb = vRB(i);
@@ -151,8 +157,9 @@ vmcase(OP_GETFIELD) {
   vmbreak;
   vmend(OP_GETFIELD)
 }
-vmcase(OP_SETTABUP) {
+vmcase_spill(OP_SETTABUP) {
   vmbegin(OP_SETTABUP)
+  vmrequires_k
   const TValue *slot;
   TValue *upval = cl->upvals[GETARG_A(i)]->v.p;
   TValue *rb = KB(i);
@@ -166,8 +173,9 @@ vmcase(OP_SETTABUP) {
   vmbreak;
   vmend(OP_SETTABUP)
 }
-vmcase(OP_SETTABLE) {
+vmcase_spill(OP_SETTABLE) {
   vmbegin(OP_SETTABLE)
+  vmrequires_k
   StkId ra = RA(i);
   const TValue *slot;
   TValue *rb = vRB(i);  /* key (table is in 'ra') */
@@ -183,8 +191,9 @@ vmcase(OP_SETTABLE) {
   vmbreak;
   vmend(OP_SETTABLE)
 }
-vmcase(OP_SETI) {
+vmcase_spill(OP_SETI) {
   vmbegin(OP_SETI)
+  vmrequires_k
   StkId ra = RA(i);
   const TValue *slot;
   int c = GETARG_B(i);
@@ -200,8 +209,9 @@ vmcase(OP_SETI) {
   vmbreak;
   vmend(OP_SETI)
 }
-vmcase(OP_SETFIELD) {
+vmcase_spill(OP_SETFIELD) {
   vmbegin(OP_SETFIELD)
+  vmrequires_k
   StkId ra = RA(i);
   const TValue *slot;
   TValue *rb = KB(i);
@@ -215,7 +225,7 @@ vmcase(OP_SETFIELD) {
   vmbreak;
   vmend(OP_SETFIELD)
 }
-vmcase(OP_NEWTABLE) {
+vmcase_spill(OP_NEWTABLE) {
   vmbegin(OP_NEWTABLE)
   StkId ra = RA(i);
   int b = GETARG_B(i);  /* log2(hash size) + 1 */
@@ -236,8 +246,9 @@ vmcase(OP_NEWTABLE) {
   vmbreak;
   vmend(OP_NEWTABLE)
 }
-vmcase(OP_SELF) {
+vmcase_spill(OP_SELF) {
   vmbegin(OP_SELF)
+  vmrequires_k
   StkId ra = RA(i);
   const TValue *slot;
   TValue *rb = vRB(i);
@@ -260,67 +271,77 @@ vmcase(OP_ADDI) {
 }
 vmcase(OP_ADDK) {
   vmbegin(OP_ADDK)
+  vmrequires_k
   op_arithK(L, l_addi, luai_numadd);
   vmbreak;
   vmend(OP_ADDK)
 }
 vmcase(OP_SUBK) {
   vmbegin(OP_SUBK)
+  vmrequires_k
   op_arithK(L, l_subi, luai_numsub);
   vmbreak;
   vmend(OP_SUBK)
 }
 vmcase(OP_MULK) {
   vmbegin(OP_MULK)
+  vmrequires_k
   op_arithK(L, l_muli, luai_nummul);
   vmbreak;
   vmend(OP_MULK)
 }
-vmcase(OP_MODK) {
+vmcase_spill(OP_MODK) {
   vmbegin(OP_MODK)
+  vmrequires_k
   savestate(L, ci);  /* in case of division by 0 */
   op_arithK(L, luaV_mod, luaV_modf);
   vmbreak;
   vmend(OP_MODK)
 }
-vmcase(OP_POWK) {
+vmcase_spill(OP_POWK) {
   vmbegin(OP_POWK)
+  vmrequires_k
   op_arithfK(L, luai_numpow);
   vmbreak;
   vmend(OP_POWK)
 }
 vmcase(OP_DIVK) {
   vmbegin(OP_DIVK)
+  vmrequires_k
   op_arithfK(L, luai_numdiv);
   vmbreak;
   vmend(OP_DIVK)
 }
-vmcase(OP_IDIVK) {
+vmcase_spill(OP_IDIVK) {
   vmbegin(OP_IDIVK)
+  vmrequires_k
   savestate(L, ci);  /* in case of division by 0 */
   op_arithK(L, luaV_idiv, luai_numidiv);
   vmbreak;
   vmend(OP_IDIVK)
 }
-vmcase(OP_BANDK) {
+vmcase_spill(OP_BANDK) {
   vmbegin(OP_BANDK)
+  vmrequires_k
   op_bitwiseK(L, l_band);
   vmbreak;
   vmend(OP_BANDK)
 }
-vmcase(OP_BORK) {
+vmcase_spill(OP_BORK) {
   vmbegin(OP_BORK)
+  vmrequires_k
   op_bitwiseK(L, l_bor);
   vmbreak;
   vmend(OP_BORK)
 }
-vmcase(OP_BXORK) {
+vmcase_spill(OP_BXORK) {
   vmbegin(OP_BXORK)
+  vmrequires_k
   op_bitwiseK(L, l_bxor);
   vmbreak;
   vmend(OP_BXORK)
 }
-vmcase(OP_SHRI) {
+vmcase_spill(OP_SHRI) {
   vmbegin(OP_SHRI)
   StkId ra = RA(i);
   TValue *rb = vRB(i);
@@ -332,7 +353,7 @@ vmcase(OP_SHRI) {
   vmbreak;
   vmend(OP_SHRI)
 }
-vmcase(OP_SHLI) {
+vmcase_spill(OP_SHLI) {
   vmbegin(OP_SHLI)
   StkId ra = RA(i);
   TValue *rb = vRB(i);
@@ -362,14 +383,14 @@ vmcase(OP_MUL) {
   vmbreak;
   vmend(OP_MUL)
 }
-vmcase(OP_MOD) {
+vmcase_spill(OP_MOD) {
   vmbegin(OP_MOD)
   savestate(L, ci);  /* in case of division by 0 */
   op_arith(L, luaV_mod, luaV_modf);
   vmbreak;
   vmend(OP_MOD)
 }
-vmcase(OP_POW) {
+vmcase_spill(OP_POW) {
   vmbegin(OP_POW)
   op_arithf(L, luai_numpow);
   vmbreak;
@@ -381,44 +402,44 @@ vmcase(OP_DIV) {  /* float division (always with floats) */
   vmbreak;
   vmend(OP_DIV)
 }
-vmcase(OP_IDIV) {  /* floor division */
+vmcase_spill(OP_IDIV) {  /* floor division */
   vmbegin(OP_IDIV)
   savestate(L, ci);  /* in case of division by 0 */
   op_arith(L, luaV_idiv, luai_numidiv);
   vmbreak;
   vmend(OP_IDIV)
 }
-vmcase(OP_BAND) {
+vmcase_spill(OP_BAND) {
   vmbegin(OP_BAND)
   op_bitwise(L, l_band);
   vmbreak;
   vmend(OP_BAND)
 }
-vmcase(OP_BOR) {
+vmcase_spill(OP_BOR) {
   vmbegin(OP_BOR)
   op_bitwise(L, l_bor);
   vmbreak;
   vmend(OP_BOR)
 }
-vmcase(OP_BXOR) {
+vmcase_spill(OP_BXOR) {
   vmbegin(OP_BXOR)
   op_bitwise(L, l_bxor);
   vmbreak;
   vmend(OP_BXOR)
 }
-vmcase(OP_SHL) {  /* @LuaExt: fix incorrect ordering */
+vmcase_spill(OP_SHL) {  /* @LuaExt: fix incorrect ordering */
   vmbegin(OP_SHL)
   op_bitwise(L, luaV_shiftl);
   vmbreak;
   vmend(OP_SHL)
 }
-vmcase(OP_SHR) {
+vmcase_spill(OP_SHR) {
   vmbegin(OP_SHR)
   op_bitwise(L, luaV_shiftr);
   vmbreak;
   vmend(OP_SHR)
 }
-vmcase(OP_MMBIN) {
+vmcase_spill(OP_MMBIN) {
   vmbegin(OP_MMBIN)
   StkId ra = RA(i);
   Instruction pi = *(pc - 2);  /* original arith. expression */
@@ -430,7 +451,7 @@ vmcase(OP_MMBIN) {
   vmbreak;
   vmend(OP_MMBIN)
 }
-vmcase(OP_MMBINI) {
+vmcase_spill(OP_MMBINI) {
   vmbegin(OP_MMBINI)
   StkId ra = RA(i);
   Instruction pi = *(pc - 2);  /* original arith. expression */
@@ -442,8 +463,9 @@ vmcase(OP_MMBINI) {
   vmbreak;
   vmend(OP_MMBINI)
 }
-vmcase(OP_MMBINK) {
+vmcase_spill(OP_MMBINK) {
   vmbegin(OP_MMBINK)
+  vmrequires_k
   StkId ra = RA(i);
   Instruction pi = *(pc - 2);  /* original arith. expression */
   TValue *imm = KB(i);
@@ -454,7 +476,7 @@ vmcase(OP_MMBINK) {
   vmbreak;
   vmend(OP_MMBINK)
 }
-vmcase(OP_UNM) {
+vmcase_spill(OP_UNM) {
   vmbegin(OP_UNM)
   StkId ra = RA(i);
   TValue *rb = vRB(i);
@@ -471,7 +493,7 @@ vmcase(OP_UNM) {
   vmbreak;
   vmend(OP_UNM)
 }
-vmcase(OP_BNOT) {
+vmcase_spill(OP_BNOT) {
   vmbegin(OP_BNOT)
   StkId ra = RA(i);
   TValue *rb = vRB(i);
@@ -484,7 +506,7 @@ vmcase(OP_BNOT) {
   vmbreak;
   vmend(OP_BNOT)
 }
-vmcase(OP_NOT) {
+vmcase_spill(OP_NOT) {
   vmbegin(OP_NOT)
   StkId ra = RA(i);
   TValue *rb = vRB(i);
@@ -495,14 +517,14 @@ vmcase(OP_NOT) {
   vmbreak;
   vmend(OP_NOT)
 }
-vmcase(OP_LEN) {
+vmcase_spill(OP_LEN) {
   vmbegin(OP_LEN)
   StkId ra = RA(i);
   Protect(luaV_objlen(L, ra, vRB(i)));
   vmbreak;
   vmend(OP_LEN)
 }
-vmcase(OP_CONCAT) {
+vmcase_spill(OP_CONCAT) {
   vmbegin(OP_CONCAT)
   StkId ra = RA(i);
   int n = GETARG_B(i);  /* number of elements to concatenate */
@@ -512,14 +534,14 @@ vmcase(OP_CONCAT) {
   vmbreak;
   vmend(OP_CONCAT)
 }
-vmcase(OP_CLOSE) {
+vmcase_spill(OP_CLOSE) {
   vmbegin(OP_CLOSE)
   StkId ra = RA(i);
   Protect(luaF_close(L, ra, LUA_OK, 1));
   vmbreak;
   vmend(OP_CLOSE)
 }
-vmcase(OP_TBC) {
+vmcase_spill(OP_TBC) {
   vmbegin(OP_TBC)
   StkId ra = RA(i);
   /* create new to-be-closed upvalue */
@@ -533,7 +555,7 @@ vmcase(OP_JMP) {
   vmbreak;
   vmend(OP_JMP)
 }
-vmcase(OP_EQ) {
+vmcase_spill(OP_EQ) {
   vmbegin(OP_EQ)
   StkId ra = RA(i);
   int cond;
@@ -543,20 +565,21 @@ vmcase(OP_EQ) {
   vmbreak;
   vmend(OP_EQ)
 }
-vmcase(OP_LT) {
+vmcase_spill(OP_LT) {
   vmbegin(OP_LT)
   op_order(L, l_lti, LTnum, lessthanothers);
   vmbreak;
   vmend(OP_LT)
 }
-vmcase(OP_LE) {
+vmcase_spill(OP_LE) {
   vmbegin(OP_LE)
   op_order(L, l_lei, LEnum, lessequalothers);
   vmbreak;
   vmend(OP_LE)
 }
-vmcase(OP_EQK) {
+vmcase_spill(OP_EQK) {
   vmbegin(OP_EQK)
+  vmrequires_k
   StkId ra = RA(i);
   TValue *rb = KB(i);
   /* basic types do not use '__eq'; we can use raw equality */
@@ -580,31 +603,31 @@ vmcase(OP_EQI) {
   vmbreak;
   vmend(OP_EQI)
 }
-vmcase(OP_LTI) {
+vmcase_spill(OP_LTI) {
   vmbegin(OP_LTI)
   op_orderI(L, l_lti, luai_numlt, 0, TM_LT);
   vmbreak;
   vmend(OP_LTI)
 }
-vmcase(OP_LEI) {
+vmcase_spill(OP_LEI) {
   vmbegin(OP_LEI)
   op_orderI(L, l_lei, luai_numle, 0, TM_LE);
   vmbreak;
   vmend(OP_LEI)
 }
-vmcase(OP_GTI) {
+vmcase_spill(OP_GTI) {
   vmbegin(OP_GTI)
   op_orderI(L, l_gti, luai_numgt, 1, TM_LT);
   vmbreak;
   vmend(OP_GTI)
 }
-vmcase(OP_GEI) {
+vmcase_spill(OP_GEI) {
   vmbegin(OP_GEI)
   op_orderI(L, l_gei, luai_numge, 1, TM_LE);
   vmbreak;
   vmend(OP_GEI)
 }
-vmcase(OP_TEST) {
+vmcase_spill(OP_TEST) {
   vmbegin(OP_TEST)
   StkId ra = RA(i);
   int cond = !l_isfalse(s2v(ra));
@@ -634,7 +657,7 @@ vmcase(OP_TESTSET) {
   vmbreak;
   vmend(OP_TESTSET)
 }
-vmcase(OP_CALL) {
+vmcase_spill(OP_CALL) {
   vmbegin(OP_CALL)
   StkId ra = RA(i);
   CallInfo *newci;
@@ -652,7 +675,7 @@ vmcase(OP_CALL) {
   vmbreak;
   vmend(OP_CALL)
 }
-vmcase(OP_TAILCALL) {
+vmcase_spill(OP_TAILCALL) {
   vmbegin(OP_TAILCALL)
   StkId ra = RA(i);
   int b = GETARG_B(i);  /* number of arguments + 1 (function) */
@@ -681,7 +704,7 @@ vmcase(OP_TAILCALL) {
   }
   vmend(OP_TAILCALL)
 }
-vmcase(OP_RETURN) {
+vmcase_spill(OP_RETURN) {
   vmbegin(OP_RETURN)
   StkId ra = RA(i);
   int n = GETARG_B(i) - 1;  /* number of results */
@@ -705,7 +728,7 @@ vmcase(OP_RETURN) {
   doreturn();
   vmend(OP_RETURN)
 }
-vmcase(OP_RETURN0) {
+vmcase_spill(OP_RETURN0) {
   vmbegin(OP_RETURN0)
   if (l_unlikely(L->hookmask)) {
     StkId ra = RA(i);
@@ -724,7 +747,7 @@ vmcase(OP_RETURN0) {
   doreturn();
   vmend(OP_RETURN0)
 }
-vmcase(OP_RETURN1) {
+vmcase_spill(OP_RETURN1) {
   vmbegin(OP_RETURN1)
   if (l_unlikely(L->hookmask)) {
     StkId ra = RA(i);
@@ -749,7 +772,7 @@ vmcase(OP_RETURN1) {
   doreturn();
   vmend(OP_RETURN1)
 }
-vmcase(OP_FORLOOP) {
+vmcase_spill(OP_FORLOOP) {
   vmbegin(OP_FORLOOP)
   StkId ra = RA(i);
   if (ttisinteger(s2v(ra + 2))) {  /* integer loop? */
@@ -770,7 +793,7 @@ vmcase(OP_FORLOOP) {
   vmbreak;
   vmend(OP_FORLOOP)
 }
-vmcase(OP_FORPREP) {
+vmcase_spill(OP_FORPREP) {
   vmbegin(OP_FORPREP)
   StkId ra = RA(i);
   savestate(L, ci);  /* in case of errors */
@@ -779,7 +802,10 @@ vmcase(OP_FORPREP) {
   vmbreak;
   vmend(OP_FORPREP)
 }
-vmcase(OP_TFORLOOP) { OP_TFORLOOP: {
+vmcase(OP_TFORLOOP) {
+#if !LUA_USE_TAILCALLS
+OP_TFORLOOP: {
+#endif
   vmbegin(OP_TFORLOOP)
   StkId ra = RA(i);
   if (!ttisnil(s2v(ra + 4))) {  /* continue loop? */
@@ -787,9 +813,15 @@ vmcase(OP_TFORLOOP) { OP_TFORLOOP: {
     pc -= GETARG_Bx(i);  /* jump back */
   }
   vmbreak;
+#if !LUA_USE_TAILCALLS
+}
+#endif
   vmend(OP_TFORLOOP)
-}}
-vmcase(OP_TFORCALL) { OP_TFORCALL: {
+}
+vmcase_spill(OP_TFORCALL) {
+#if !LUA_USE_TAILCALLS
+OP_TFORCALL: {
+#endif
   vmbegin(OP_TFORCALL)
     StkId ra = RA(i);
   /* 'ra' has the iterator function, 'ra + 1' has the state,
@@ -805,9 +837,12 @@ vmcase(OP_TFORCALL) { OP_TFORCALL: {
   i = *(pc++);  /* go to next instruction */
   lua_assert(GET_OPCODE(i) == OP_TFORLOOP && ra == RA(i));
   vmgoto(OP_TFORLOOP);
+#if !LUA_USE_TAILCALLS
+}
+#endif
   vmend(OP_TFORCALL)
-}}
-vmcase(OP_TFORPREP) {
+}
+vmcase_spill(OP_TFORPREP) {
   vmbegin(OP_TFORPREP)
   StkId ra = RA(i);
   /* create to-be-closed upvalue (if needed) */
@@ -818,7 +853,7 @@ vmcase(OP_TFORPREP) {
   vmgoto(OP_TFORCALL);
   vmend(OP_TFORPREP)
 }
-vmcase(OP_SETLIST) {
+vmcase_spill(OP_SETLIST) {
   vmbegin(OP_SETLIST)
   StkId ra = RA(i);
   int n = GETARG_B(i);
@@ -844,8 +879,9 @@ vmcase(OP_SETLIST) {
   vmbreak;
   vmend(OP_SETLIST)
 }
-vmcase(OP_CLOSURE) {
+vmcase_spill(OP_CLOSURE) {
   vmbegin(OP_CLOSURE)
+  vmrequires_cl
   StkId ra = RA(i);
   Proto *p = cl->p->p[GETARG_Bx(i)];
   halfProtect(pushclosure(L, p, cl->upvals, base, ra));
@@ -853,7 +889,7 @@ vmcase(OP_CLOSURE) {
   vmbreak;
   vmend(OP_CLOSURE)
 }
-vmcase(OP_VARARG) {
+vmcase_spill(OP_VARARG) {
   vmbegin(OP_VARARG)
   StkId ra = RA(i);
   int n = GETARG_C(i) - 1;  /* required results */
@@ -861,8 +897,9 @@ vmcase(OP_VARARG) {
   vmbreak;
   vmend(OP_VARARG)
 }
-vmcase(OP_VARARGPREP) {
+vmcase_spill(OP_VARARGPREP) {
   vmbegin(OP_VARARGPREP)
+  vmrequires_cl
   ProtectNT(luaT_adjustvarargs(L, GETARG_A(i), ci, cl->p));
   if (l_unlikely(trap)) {  /* previous "Protect" updated trap */
     luaD_hookcall(L, ci);
@@ -878,3 +915,11 @@ vmcase(OP_EXTRAARG) {
   vmbreak;
   vmend(OP_EXTRAARG)
 }
+#if LUA_USE_TAILCALLS
+vmcase(OP_INVALID) {
+  vmbegin(OP_INVALID)
+  lua_assert(0);
+  vmbreak;
+  vmend(OP_INVALID)
+}
+#endif

@@ -39,11 +39,18 @@
 ** @LuaExt: Enable computed gotos when compiled with clang-cl.
 */
 #if !defined(LUA_USE_JUMPTABLE)
-#if (defined(__GNUC__) && !defined(__NVCOMPILER)) || defined(__clang__)
-#define LUA_USE_JUMPTABLE	1
+  #if LUA_HAS_ATTRIBUTE(musttail) && defined(LUA_EXT_TAILVM)
+    #define LUA_USE_TAILCALLS 1
+    #define LUA_USE_JUMPTABLE 0
+  #elif (defined(__GNUC__) && !defined(__NVCOMPILER)) || defined(__clang__)
+    #define LUA_USE_TAILCALLS 0
+    #define LUA_USE_JUMPTABLE 1
+  #else
+    #define LUA_USE_TAILCALLS 0
+    #define LUA_USE_JUMPTABLE 0
+  #endif
 #else
-#define LUA_USE_JUMPTABLE	0
-#endif
+  #define LUA_USE_TAILCALLS 0
 #endif
 
 
@@ -1167,6 +1174,74 @@ void luaV_finishOp (lua_State *L) {
   i = *(pc++); \
 }
 
+#if LUA_USE_TAILCALLS
+  #define LUAV_ARGS      L, pc, ci, base, i, trap
+  #define LUAV_FRAME(CI) L, pc, (CI), base, i, trap
+  #define LUAV_PARAMS                                              \
+    lua_State *L, const Instruction *pc, CallInfo *ci, StkId base, \
+      Instruction i, int trap
+
+  typedef void luaV_OpResult;
+  typedef luaV_OpResult (*LUA_PRESERVE_NONE lua_OpFunc)(LUAV_PARAMS);
+  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult(luaV_dispatch)(LUAV_PARAMS);
+  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult(luaV_newframe)(LUAV_PARAMS);
+
+  #define vmfunc(l)  luaV_##l
+  #define vmlabel(l) luaV_OP_##l,
+  #define vmcase(NAME) static LUA_PRESERVE_NONE luaV_OpResult(vmfunc(NAME))(LUAV_PARAMS)
+
+  /* Stub to denote that an opcode may call an external/API function and spill,
+  ** or reorder, registers: the interaction w/ preserve_none needs to be
+  ** verified. Many of the called functions need to be inlined anyway. */
+  #define vmcase_spill vmcase
+  #define vmrequires_cl LClosure *cl = ci_func(ci);
+  #define vmrequires_k          \
+    LClosure *cl = ci_func(ci); \
+    TValue *k = cl->p->k;
+
+  #define vmbegin(OP)
+  #define vmend(OP)
+  #define vmgoto(OP) LUA_MUSTTAIL return vmfunc(OP)(LUAV_ARGS)
+  #define vmbreak LUA_MUSTTAIL return luaV_dispatch(LUAV_ARGS)
+
+  #define vmframe_new(nci) LUA_MUSTTAIL return luaV_newframe(LUAV_FRAME(nci))
+  #define vmframe_start(L, nci) trap = (L)->hookmask; vmframe_new(nci)
+  #define vmframe_return(L, nci) vmframe_new(nci)
+  #define vmframe_end(L, nci) return
+
+  #include "lvm_impl.h"
+  static lua_OpFunc luaV_opfuncs[128] = {
+    LUA_XOP(vmlabel)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID) vmlabel(INVALID)
+    vmlabel(INVALID) /* 128 */
+  };
+
+  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult luaV_dispatch(LUAV_PARAMS) {
+    vmfetch();
+    LUA_MUSTTAIL return luaV_opfuncs[GET_OPCODE(i)](LUAV_ARGS);
+  }
+
+  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult luaV_newframe(LUAV_PARAMS) {
+    pc = ci->u.l.savedpc;
+    if (l_unlikely(trap))
+      trap = luaG_tracecall(L);
+    base = ci->func.p + 1;
+    LUA_MUSTTAIL return luaV_dispatch(LUAV_ARGS);
+  }
+#else
+#define vmcase_spill vmcase
+#define vmrequires_cl
+#define vmrequires_k
 #define vmbegin(OP)
 #define vmend(OP)
 #define vmgoto(OP) goto OP
@@ -1183,6 +1258,7 @@ void luaV_finishOp (lua_State *L) {
 #define vmcase(l)	case l:
 #define vmbreak		break
 #endif
+#endif
 
 
 /* @LuaExt: Disable tail merging if possible */
@@ -1190,16 +1266,25 @@ void luaV_finishOp (lua_State *L) {
 __attribute__((optimize("no-crossjumping", "no-gcse")))
 #endif
 void luaV_execute (lua_State *L, CallInfo *ci) {
+#if !LUA_USE_TAILCALLS
   LClosure *cl;
   TValue *k;
+#endif
   StkId base;
   const Instruction *pc;
   int trap;
-#if LUA_USE_JUMPTABLE
-  static const void *const disptab[NUM_OPCODES] = {
-    LUA_XOP(vmlabel)
-  };
-#endif
+#if LUA_USE_TAILCALLS
+  Instruction i = 0;
+  trap = L->hookmask; /* luaV_newframe */
+  pc = ci->u.l.savedpc;
+  if (l_unlikely(trap))
+    trap = luaG_tracecall(L);
+  base = ci->func.p + 1;
+  luaV_dispatch(LUAV_ARGS);
+#else
+  #if LUA_USE_JUMPTABLE
+  static const void *const disptab[NUM_OPCODES] = { LUA_XOP(vmlabel) };
+  #endif
  startfunc:
   trap = L->hookmask;
  returning:  /* trap already set */
@@ -1213,24 +1298,25 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
   for (;;) {
     Instruction i;  /* instruction being executed */
     vmfetch();
-    #if 0
+  #if 0
       /* low-level line tracing for debugging Lua */
       printf("line: %d\n", luaG_getfuncline(cl->p, pcRel(pc, cl->p)));
-    #endif
+  #endif
     lua_assert(base == ci->func.p + 1);
     lua_assert(base <= L->top.p && L->top.p <= L->stack_last.p);
     /* invalidate top for instructions not expecting it */
     lua_assert(isIT(i) || (cast_void(L->top.p = base), 1));
     vmdispatch (GET_OPCODE(i)) {
       #include "lvm_impl.h"
-#if !(LUA_USE_JUMPTABLE)
+  #if !(LUA_USE_JUMPTABLE || LUA_USE_TAILCALLS)
       default: {  /* @LuaExt: see faster-cpython/ideas/issues/422 discussion */
         lua_assert(0);
         LUA_UNREACHABLE();
       }
-#endif
+  #endif
     }
   }
+#endif
 }
 
 /* }================================================================== */

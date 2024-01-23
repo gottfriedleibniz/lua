@@ -7,7 +7,7 @@
 PLAT= guess
 
 # Lua configuration: see README & luaconf.h
-LUA_CONFIG=
+LUA_CONFIG=-DLUA_EXT_TAILVM
 
 # Environment variables
 AR?= ar
@@ -377,7 +377,7 @@ lundump.o: lundump.c lprefix.h lua.h luaconf.h ldebug.h lstate.h \
 lutf8lib.o: lutf8lib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h
 lvm.o: lvm.c lprefix.h lua.h luaconf.h ldebug.h lstate.h lobject.h \
  llimits.h ltm.h lzio.h lmem.h ldo.h lfunc.h lgc.h lopcodes.h lstring.h \
- ltable.h lvm.h
+ ltable.h lvm.h lvm_impl.h
 	$(CC) $(CFLAGS) -fomit-frame-pointer -c -o $@ lvm.c
 lzio.o: lzio.c lprefix.h lua.h luaconf.h llimits.h lmem.h lstate.h \
  lobject.h ltm.h lzio.h

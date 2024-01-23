@@ -49,7 +49,9 @@
 
 
 /* get a chance to test code without jump tables */
+#if !defined(LUA_EXT_TAILVM)
 #define LUA_USE_JUMPTABLE	0
+#endif
 
 
 /* use 32-bit integers in random generator */
