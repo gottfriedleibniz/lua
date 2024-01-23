@@ -54,7 +54,9 @@
 
 #if defined(LUA_USE_WINDOWS)
 #define LUA_DL_DLL	/* enable support for DLL */
-#define LUA_USE_C89	/* broadly, Windows is C89 */
+#if defined(_MSC_VER) && (_MSC_VER < 1900 || !defined(_MSC_EXTENSIONS))
+#define LUA_USE_C89	/* broadly, Windows is C89 (@LuaExt: lang extensions) */
+#endif
 #endif
 
 
@@ -121,8 +123,11 @@
 
 /*
 @@ LUA_32BITS enables Lua with 32-bit integers and 32-bit floats.
+** @LuaExt: Allowed to be defined at compile-time to simplify testing.
 */
+#if !defined(LUA_32BITS)
 #define LUA_32BITS	0
+#endif
 
 
 /*
@@ -235,8 +240,13 @@
 #endif
 
 #if !defined(LUA_CPATH_DEFAULT)
-#define LUA_CPATH_DEFAULT \
-		LUA_CDIR"?.so;" LUA_CDIR"loadall.so;" "./?.so"
+#if defined(__wasm__)
+  #define LUA_CPATH_DEFAULT \
+		  LUA_CDIR"?.wasm;" LUA_CDIR"loadall.wasm;" "./?.wasm"
+#else
+  #define LUA_CPATH_DEFAULT \
+		  LUA_CDIR"?.so;" LUA_CDIR"loadall.so;" "./?.so"
+#endif
 #endif
 
 #endif			/* } */
@@ -292,6 +302,11 @@
 #define LUA_API __declspec(dllimport)
 #endif						/* } */
 
+#elif defined(__EMSCRIPTEN__)	/* }{ */
+
+/* EMSCRIPTEN_KEEPALIVE */
+#define LUA_API		__attribute__((used)) extern
+
 #else				/* }{ */
 
 #define LUA_API		extern
@@ -312,17 +327,11 @@
 @@ LUAI_DDEF and LUAI_DDEC are marks for all extern (const) variables,
 ** none of which to be exported to outside modules (LUAI_DDEF for
 ** definitions and LUAI_DDEC for declarations).
-** CHANGE them if you need to mark them in some special way. Elf/gcc
-** (versions 3.2 and later) mark them as "hidden" to optimize access
-** when Lua is compiled as a shared library. Not all elf targets support
-** this attribute. Unfortunately, gcc does not offer a way to check
-** whether the target offers that support, and those without support
-** give a warning about it. To avoid these warnings, change to the
-** default definition.
+** @LuaExt: Defaults to hidden.
 */
 #if defined(__GNUC__) && ((__GNUC__*100 + __GNUC_MINOR__) >= 302) && \
     defined(__ELF__)		/* { */
-#define LUAI_FUNC	__attribute__((visibility("internal"))) extern
+#define LUAI_FUNC	__attribute__((visibility("hidden"))) extern
 #else				/* }{ */
 #define LUAI_FUNC	extern
 #endif				/* } */
@@ -680,7 +689,8 @@
 */
 #if !defined(luai_likely)
 
-#if defined(__GNUC__) && !defined(LUA_NOBUILTIN)
+/* @LuaExt: clang-cl does not define GNUC */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(LUA_NOBUILTIN)
 #define luai_likely(x)		(__builtin_expect(((x) != 0), 1))
 #define luai_unlikely(x)	(__builtin_expect(((x) != 0), 0))
 #else
@@ -794,9 +804,91 @@
 ** without modifying the main part of the file.
 */
 
+/*
+@@ LUA_GNUC_PREREQ GNU C compiler version test
+*/
+#if defined(__GNUC__) && defined(__GNUC_MINOR__)
+  #define LUA_GNUC_PREREQ(X, Y) (__GNUC__ > (X) || (__GNUC__ == (X) && __GNUC_MINOR__ >= (Y)))
+#else
+  #define LUA_GNUC_PREREQ(X, Y) 0
+#endif
 
+/*
+@@ LUA_HAS_ATTRIBUTE __has_attribute wrapper
+*/
+#if defined(__has_attribute)
+  #define LUA_HAS_ATTRIBUTE(x) __has_attribute(x)
+#else
+  #define LUA_HAS_ATTRIBUTE(x) 0
+#endif
 
+/*
+@@ LUA_HAS_BUILTIN __has_builtin wrapper
+*/
+#if defined(__has_builtin)
+  #define LUA_HAS_BUILTIN(x) __has_builtin(x)
+#else
+  #define LUA_HAS_BUILTIN(x) 0
+#endif
 
+/*
+@@ LUA_HAS_FEATURE _has_feature wrapper
+*/
+#if defined(__has_feature)
+  #define LUA_HAS_FEATURE(x) __has_feature(x)
+#else
+  #define LUA_HAS_FEATURE(x) 0
+#endif
+
+/*
+@@ LUA_INLINE indicate that a function must be inlined
+*/
+#if defined(_MSC_VER) && _MSC_VER >= 1200
+  #define LUA_INLINE __forceinline
+  #define LUA_NOINLINE __declspec(noinline)
+#elif defined(LUA_USE_C89)
+  #define LUA_INLINE
+  #define LUA_NOINLINE
+#elif LUA_HAS_ATTRIBUTE(__always_inline__)
+  #define LUA_INLINE inline __attribute__((__always_inline__))
+  #define LUA_NOINLINE __attribute__((__noinline__))
+#else
+  #define LUA_INLINE inline
+  #define LUA_NOINLINE
+#endif
+
+/*
+@@ LUA_NORETURN indicate function shall not return to its caller
+*/
+#if defined(_MSC_VER) && _MSC_VER >= 1200
+  #define LUA_NORETURN __declspec(noreturn)
+#elif LUA_HAS_ATTRIBUTE(__noreturn__)
+  #define LUA_NORETURN __attribute__((__noreturn__))
+#else
+  #define LUA_NORETURN
+#endif
+
+/*
+@@ LUA_FALLTHROUGH inform the compiler a fallthrough is intentional
+*/
+#if defined(__cplusplus) && __cplusplus >= 201703
+  #define LUA_FALLTHROUGH [[fallthrough]]
+#elif LUA_HAS_ATTRIBUTE(__fallthrough__)
+  #define LUA_FALLTHROUGH __attribute__((__fallthrough__))
+#else
+  #define LUA_FALLTHROUGH do { } while (0) /* FALLTHROUGH */
+#endif
+
+/*
+@@ LUA_UNREACHABLE unreachable code path
+*/
+#if defined(_MSC_VER) && _MSC_VER > 1200
+  #define LUA_UNREACHABLE() __assume(0)
+#elif LUA_GNUC_PREREQ(4, 5) || defined(__clang__) || defined(__INTEL_COMPILER)
+  #define LUA_UNREACHABLE() __builtin_unreachable()
+#else
+  #define LUA_UNREACHABLE() do { } while (0)
+#endif
 
 #endif
 

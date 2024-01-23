@@ -402,4 +402,103 @@ LUAI_DDEC(const lu_byte luaP_opmodes[NUM_OPCODES];)
 /* number of list items to accumulate before a SETLIST instruction */
 #define LFIELDS_PER_FLUSH	50
 
+/*
+** {==============================================================
+** @LuaExt: replace ljumptab and lopnames with xmacros
+** ===============================================================
+*/
+
+#if 0
+** Generated using the repurposed sed command from ljumptab.h
+** sed -n '/^OP_/!d; s/OP_/  X(/ ; s/,.*/) \\/ ; s/\/.*/)/ ; p'  lopcodes.h
+#endif
+
+/* ORDER OP */
+#define LUA_XOP(X) \
+  X(MOVE)          \
+  X(LOADI)         \
+  X(LOADF)         \
+  X(LOADK)         \
+  X(LOADKX)        \
+  X(LOADFALSE)     \
+  X(LFALSESKIP)    \
+  X(LOADTRUE)      \
+  X(LOADNIL)       \
+  X(GETUPVAL)      \
+  X(SETUPVAL)      \
+  X(GETTABUP)      \
+  X(GETTABLE)      \
+  X(GETI)          \
+  X(GETFIELD)      \
+  X(SETTABUP)      \
+  X(SETTABLE)      \
+  X(SETI)          \
+  X(SETFIELD)      \
+  X(NEWTABLE)      \
+  X(SELF)          \
+  X(ADDI)          \
+  X(ADDK)          \
+  X(SUBK)          \
+  X(MULK)          \
+  X(MODK)          \
+  X(POWK)          \
+  X(DIVK)          \
+  X(IDIVK)         \
+  X(BANDK)         \
+  X(BORK)          \
+  X(BXORK)         \
+  X(SHRI)          \
+  X(SHLI)          \
+  X(ADD)           \
+  X(SUB)           \
+  X(MUL)           \
+  X(MOD)           \
+  X(POW)           \
+  X(DIV)           \
+  X(IDIV)          \
+  X(BAND)          \
+  X(BOR)           \
+  X(BXOR)          \
+  X(SHL)           \
+  X(SHR)           \
+  X(MMBIN)         \
+  X(MMBINI)        \
+  X(MMBINK)        \
+  X(UNM)           \
+  X(BNOT)          \
+  X(NOT)           \
+  X(LEN)           \
+  X(CONCAT)        \
+  X(CLOSE)         \
+  X(TBC)           \
+  X(JMP)           \
+  X(EQ)            \
+  X(LT)            \
+  X(LE)            \
+  X(EQK)           \
+  X(EQI)           \
+  X(LTI)           \
+  X(LEI)           \
+  X(GTI)           \
+  X(GEI)           \
+  X(TEST)          \
+  X(TESTSET)       \
+  X(CALL)          \
+  X(TAILCALL)      \
+  X(RETURN)        \
+  X(RETURN0)       \
+  X(RETURN1)       \
+  X(FORLOOP)       \
+  X(FORPREP)       \
+  X(TFORPREP)      \
+  X(TFORCALL)      \
+  X(TFORLOOP)      \
+  X(SETLIST)       \
+  X(CLOSURE)       \
+  X(VARARG)        \
+  X(VARARGPREP)    \
+  X(EXTRAARG)
+
+/* }============================================================ */
+
 #endif

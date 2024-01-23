@@ -34,9 +34,12 @@
 /*
 ** By default, use jump tables in the main interpreter loop on gcc
 ** and compatible compilers.
+**
+** @NVC: Does not support the labels-as-values extension.
+** @LuaExt: Enable computed gotos when compiled with clang-cl.
 */
 #if !defined(LUA_USE_JUMPTABLE)
-#if defined(__GNUC__)
+#if (defined(__GNUC__) && !defined(__NVCOMPILER)) || defined(__clang__)
 #define LUA_USE_JUMPTABLE	1
 #else
 #define LUA_USE_JUMPTABLE	0
@@ -89,6 +92,7 @@
 */
 static int l_strton (const TValue *obj, TValue *result) {
   lua_assert(obj != result);
+  setivalue(result, 0); /* @LuaExt: avoid compiler warnings w/ unity builds */
   if (!cvt2num(obj))  /* is object not a string? */
     return 0;
   else {
@@ -1096,8 +1100,29 @@ void luaV_finishOp (lua_State *L) {
 ** was expected (parameter 'k'), else do next instruction, which must
 ** be a jump.
 */
+#if 1 /* @LuaExt: compiler output experiment */
+#define docondjump()           \
+  do {                         \
+    Instruction ni = *(pc++);  \
+    if (cond == GETARG_k(i)) { \
+      pc += GETARG_sJ(ni);     \
+      updatetrap(ci);          \
+    }                          \
+  } while (0)
+#else
 #define docondjump()	if (cond != GETARG_k(i)) pc++; else donextjump(ci);
+#endif
 
+/* @LuaExt: inlined return from a Lua function */
+#define doreturn()                                     \
+  do {                                                 \
+    if (ci->callstatus & CIST_FRESH)                   \
+      return; /* end this frame */                     \
+    else { /* continue running caller in this frame */ \
+      ci = ci->previous;                               \
+      goto returning;                                  \
+    }                                                  \
+  } while (0)
 
 /*
 ** Correct global 'pc'.
@@ -1143,11 +1168,22 @@ void luaV_finishOp (lua_State *L) {
   i = *(pc++); \
 }
 
+#if LUA_USE_JUMPTABLE
+#define vmlabel(l)	&&L_OP_##l,
+#define vmdispatch(x)	goto *disptab[x];
+#define vmcase(l)	L_##l:
+#define vmbreak		vmfetch(); vmdispatch(GET_OPCODE(i));
+#else
 #define vmdispatch(o)	switch(o)
 #define vmcase(l)	case l:
 #define vmbreak		break
+#endif
 
 
+/* @LuaExt: Disable tail merging if possible */
+#if 0 && LUA_HAS_ATTRIBUTE(optimize) && !defined(__INTEL_COMPILER)
+__attribute__((optimize("no-crossjumping", "no-gcse")))
+#endif
 void luaV_execute (lua_State *L, CallInfo *ci) {
   LClosure *cl;
   TValue *k;
@@ -1155,7 +1191,9 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
   const Instruction *pc;
   int trap;
 #if LUA_USE_JUMPTABLE
-#include "ljumptab.h"
+  static const void *const disptab[NUM_OPCODES] = {
+    LUA_XOP(vmlabel)
+  };
 #endif
  startfunc:
   trap = L->hookmask;
@@ -1499,12 +1537,12 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         op_bitwise(L, l_bxor);
         vmbreak;
       }
-      vmcase(OP_SHR) {
-        op_bitwise(L, luaV_shiftr);
+      vmcase(OP_SHL) {  /* @LuaExt: fix incorrect ordering */
+        op_bitwise(L, luaV_shiftl);
         vmbreak;
       }
-      vmcase(OP_SHL) {
-        op_bitwise(L, luaV_shiftl);
+      vmcase(OP_SHR) {
+        op_bitwise(L, luaV_shiftr);
         vmbreak;
       }
       vmcase(OP_MMBIN) {
@@ -1540,12 +1578,12 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
       vmcase(OP_UNM) {
         StkId ra = RA(i);
         TValue *rb = vRB(i);
-        lua_Number nb;
         if (ttisinteger(rb)) {
           lua_Integer ib = ivalue(rb);
           setivalue(s2v(ra), intop(-, 0, ib));
         }
-        else if (tonumberns(rb, nb)) {
+        else if (ttisfloat(rb)) {  /* @LuaExt: tonumberns */
+          lua_Number nb = fltvalue(rb);
           setfltvalue(s2v(ra), luai_numunm(L, nb));
         }
         else
@@ -1662,12 +1700,21 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
       vmcase(OP_TESTSET) {
         StkId ra = RA(i);
         TValue *rb = vRB(i);
+#if 1 /* @LuaExt: compiler output experiment */
+        Instruction ni = *(pc++);
+        if (l_isfalse(rb) != GETARG_k(i)) {
+          pc += GETARG_sJ(ni);
+          setobj2s(L, ra, rb);
+          updatetrap(ci);
+        }
+#else
         if (l_isfalse(rb) == GETARG_k(i))
           pc++;
         else {
           setobj2s(L, ra, rb);
           donextjump(ci);
         }
+#endif
         vmbreak;
       }
       vmcase(OP_CALL) {
@@ -1710,7 +1757,7 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
           ci->func.p -= delta;  /* restore 'func' (if vararg) */
           luaD_poscall(L, ci, n);  /* finish caller */
           updatetrap(ci);  /* 'luaD_poscall' can change hooks */
-          goto ret;  /* caller returns after the tail call */
+          doreturn();  /* caller returns after the tail call */
         }
       }
       vmcase(OP_RETURN) {
@@ -1733,7 +1780,7 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         L->top.p = ra + n;  /* set call for 'luaD_poscall' */
         luaD_poscall(L, ci, n);
         updatetrap(ci);  /* 'luaD_poscall' can change hooks */
-        goto ret;
+        doreturn();
       }
       vmcase(OP_RETURN0) {
         if (l_unlikely(L->hookmask)) {
@@ -1750,7 +1797,7 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
           for (nres = ci->nresults; l_unlikely(nres > 0); nres--)
             setnilvalue(s2v(L->top.p++));  /* all results are nil */
         }
-        goto ret;
+        doreturn();
       }
       vmcase(OP_RETURN1) {
         if (l_unlikely(L->hookmask)) {
@@ -1773,13 +1820,7 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
               setnilvalue(s2v(L->top.p++));  /* complete missing results */
           }
         }
-       ret:  /* return from a Lua function */
-        if (ci->callstatus & CIST_FRESH)
-          return;  /* end this frame */
-        else {
-          ci = ci->previous;
-          goto returning;  /* continue running caller in this frame */
-        }
+        doreturn();
       }
       vmcase(OP_FORLOOP) {
         StkId ra = RA(i);
@@ -1892,6 +1933,12 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         lua_assert(0);
         vmbreak;
       }
+#if !(LUA_USE_JUMPTABLE)
+      default: {  /* @LuaExt: see faster-cpython/ideas/issues/422 discussion */
+        lua_assert(0);
+        LUA_UNREACHABLE();
+      }
+#endif
     }
   }
 }

@@ -60,7 +60,55 @@
 	try { a } catch(...) { if ((c)->status == 0) (c)->status = -1; }
 #define luai_jmpbuf		int  /* dummy variable */
 
+#elif defined(LUA_NO_UNWIND) && defined(_UCRT)				/* }{ */
+
+/*
+** lua_yield is incredibly slow on Win64 as longjmp has:
+**    "the same stack-unwinding semantics as exception-handling code"
+** where most of luaD_throw's execution will be within the Windows exception
+** handling routines, e.g., RtlUnwind. WASM suffers from a similar issue.
+**
+** One potential, and cross-platform, workaround would be to handle LUA_YIELD by
+** encoding it into lua_CFunction's return value (e.g., INT_MIN) then using the
+** CallInfo chain in lua_State to resume execution rather than relying on
+** non-local jumps.
+**
+** The hack below uses intrinsic_setjmp with a NULL function frame to bypass
+** RtlUnwind in the subsequent longjmp.
+**
+** @NOTE: the second parameter to _setjmp3 is actually 'int count'
+*/
+#if (defined(_M_IX86) || defined(__i386__)) && !defined(_INC_SETJMPEX)
+  #define __setjmp _setjmp3
+#elif defined(_WIN64)
+  #define __setjmp __intrinsic_setjmpex
+#else
+  #define __setjmp __intrinsic_setjmp
+#endif
+
+#if defined(__cplusplus)
+extern "C"
+#endif
+int __cdecl __setjmp(_Out_ jmp_buf, _In_ void *);
+
+#define LUAI_THROW(L,c)		longjmp((c)->b, 1)
+#define LUAI_TRY(L,c,a)		if (__setjmp((c)->b, NULL) == 0) { a }
+#define luai_jmpbuf		jmp_buf
+
+#elif defined(LUA_USE_BUILTIN_JMP) && defined(__GNUC__) && __GNUC__ >= 4 /* }{ */
+
+/* __MINGW64__: has issues w/ stack corruption, use GCC builtins instead. */
+#define LUAI_THROW(L,c)		__builtin_longjmp(cast_voidp(&(c)->b), 1)
+#define LUAI_TRY(L,c,a)		if (__builtin_setjmp(cast_voidp(&(c)->b)) == 0) { a }
+#define luai_jmpbuf		struct { void *buf[5]; }
+
 #elif defined(LUA_USE_POSIX)				/* }{ */
+
+/* @LuaExt: Solaris 5.11: missing in iso/setjmp_iso.h */
+#if defined(__sun__) && defined(__cplusplus) && __cplusplus >= 199711L
+using std::_setjmp;
+using std::_longjmp;
+#endif
 
 /* in POSIX, try _longjmp/_setjmp (more efficient) */
 #define LUAI_THROW(L,c)		_longjmp((c)->b, 1)

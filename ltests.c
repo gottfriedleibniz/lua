@@ -27,7 +27,6 @@
 #include "lfunc.h"
 #include "lmem.h"
 #include "lopcodes.h"
-#include "lopnames.h"
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
@@ -42,6 +41,11 @@
 
 
 void *l_Trick = 0;
+
+
+Memcontrol l_memcontrol =
+  {0, 0UL, 0UL, 0UL, 0UL, (~0UL),
+   {0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL}};
 
 
 #define obj_at(L,k)	s2v(L->ci->func.p + (k))
@@ -186,11 +190,6 @@ typedef union Header {
 #define fillmem(mem,size)	/* empty */
 
 #endif
-
-
-Memcontrol l_memcontrol =
-  {0, 0UL, 0UL, 0UL, 0UL, (~0UL),
-   {0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL}};
 
 
 static void freeblock (Memcontrol *mc, Header *block) {
@@ -675,6 +674,12 @@ int lua_checkmemory (lua_State *L) {
 
 
 static char *buildop (Proto *p, int pc, char *buff) {
+#define opcode_name(X) #X,
+  static const char *const opnames[NUM_OPCODES + 1] = {
+    LUA_XOP(opcode_name)
+    NULL
+  };
+#undef opcode_name
   char *obuff = buff;
   Instruction i = p->code[pc];
   OpCode o = GET_OPCODE(i);

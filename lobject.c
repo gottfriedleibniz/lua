@@ -16,6 +16,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_MSC_VER)
+  #include <intrin.h>
+  #pragma intrinsic(_BitScanReverse)
+#endif
 
 #include "lua.h"
 
@@ -33,6 +37,17 @@
 ** Computes ceil(log2(x))
 */
 int luaO_ceillog2 (unsigned int x) {
+#if LUA_HAS_BUILTIN(__builtin_clz)
+  /* It should be possible to mask (e.g., cmov/csel) the "undefined result" part
+   * of __builtin_clz. Current approach avoids headaches. */
+  const int bits = cast_int(sizeof(unsigned int) * CHAR_BIT);
+  return (x > 1) ? (bits - __builtin_clz(x - 1)) : 0;
+#elif defined(_MSC_VER)
+  unsigned long index;
+  if (x > 1 && _BitScanReverse(&index, cast(unsigned long, x) - 1))
+    return cast_int(index + 1);
+  return 0;
+#else
   static const lu_byte log_2[256] = {  /* log_2[i] = ceil(log2(i - 1)) */
     0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
     6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
@@ -47,6 +62,7 @@ int luaO_ceillog2 (unsigned int x) {
   x--;
   while (x >= 256) { l += 8; x >>= 8; }
   return l + log_2[x];
+#endif
 }
 
 

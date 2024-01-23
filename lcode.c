@@ -1336,7 +1336,10 @@ static int constfolding (FuncState *fs, int op, expdesc *e1,
   TValue v1, v2, res;
   if (!tonumeral(e1, &v1) || !tonumeral(e2, &v2) || !validop(op, &v1, &v2))
     return 0;  /* non-numeric operands or not safe to fold */
-  luaO_rawarith(fs->ls->L, op, &v1, &v2, &res);  /* does operation */
+  /* @LuaExt: suppress warnings during unity building. validop ensures
+  ** luaO_rawarith will be successful. Sanitize anyway. */
+  if (!luaO_rawarith(fs->ls->L, op, &v1, &v2, &res))  /* does operation */
+    return 0;
   if (ttisinteger(&res)) {
     e1->k = VKINT;
     e1->u.ival = ivalue(&res);

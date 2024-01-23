@@ -1,3 +1,5 @@
+#define LUA_LIB
+
 #include "lua.h"
 
 /* function from lib1.c */

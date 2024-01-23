@@ -19,6 +19,18 @@
 #define LUA_DEBUG
 
 
+/* @LuaExt: debug module exports */
+#if defined(LUA_BUILD_AS_DLL)
+#if defined(ltests_c)
+  #define LUA_DAPI extern __declspec(dllexport)
+#else
+  #define LUA_DAPI extern __declspec(dllimport)
+#endif
+#else
+  #define LUA_DAPI extern
+#endif
+
+
 /* turn on assertions */
 #define LUAI_ASSERT
 
@@ -55,13 +67,13 @@ typedef struct Memcontrol {
   unsigned long objcount[LUA_NUMTYPES];
 } Memcontrol;
 
-LUA_API Memcontrol l_memcontrol;
+LUA_DAPI Memcontrol l_memcontrol;
 
 
 /*
 ** generic variable for debug tricks
 */
-extern void *l_Trick;
+LUA_DAPI void *l_Trick;
 
 
 
