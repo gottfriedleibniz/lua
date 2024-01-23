@@ -1183,8 +1183,8 @@ void luaV_finishOp (lua_State *L) {
 
   typedef void luaV_OpResult;
   typedef luaV_OpResult (*LUA_PRESERVE_NONE lua_OpFunc)(LUAV_PARAMS);
-  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult(luaV_dispatch)(LUAV_PARAMS);
-  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult(luaV_newframe)(LUAV_PARAMS);
+  static inline LUA_PRESERVE_NONE luaV_OpResult(luaV_dispatch)(LUAV_PARAMS);
+  static inline LUA_PRESERVE_NONE luaV_OpResult(luaV_newframe)(LUAV_PARAMS);
 
   #define vmfunc(l)  luaV_##l
   #define vmlabel(l) luaV_OP_##l,
@@ -1226,12 +1226,12 @@ void luaV_finishOp (lua_State *L) {
     vmlabel(INVALID) /* 128 */
   };
 
-  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult luaV_dispatch(LUAV_PARAMS) {
+  static inline LUA_PRESERVE_NONE luaV_OpResult luaV_dispatch(LUAV_PARAMS) {
     vmfetch();
     LUA_MUSTTAIL return luaV_opfuncs[GET_OPCODE(i)](LUAV_ARGS);
   }
 
-  static LUA_NOINLINE LUA_PRESERVE_NONE luaV_OpResult luaV_newframe(LUAV_PARAMS) {
+  static inline LUA_PRESERVE_NONE luaV_OpResult luaV_newframe(LUAV_PARAMS) {
     pc = ci->u.l.savedpc;
     if (l_unlikely(trap))
       trap = luaG_tracecall(L);
