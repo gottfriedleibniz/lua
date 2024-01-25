@@ -640,6 +640,7 @@ static void doREPL (lua_State *L) {
   lua_readhistory(L, history_path);
 #endif
 #if defined(LUA_USE_WINDOWS) && !(defined(LUA_USE_POSIX) || defined(__CYGWIN__))
+  SetConsoleOutputCP(CP_UTF8);
   if (!SetConsoleCtrlHandler(lctrl_handler, TRUE)) {
     l_message(progname, "setting control handler failed");
     return;

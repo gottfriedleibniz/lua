@@ -221,6 +221,14 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 ** ===================================================================
 */
 
+/* Masks */
+#define CGLM_MASK_SIGN 0x80000000u
+#define CGLM_MASK_MANT 0x807FFFFFu
+#define CGLM_MASK_ABS  0x7FFFFFFFu
+#define CGLM_MASK_LIMT 0x4B000000u
+#define CGLM_MASK_PINF 0x7F800000u
+#define CGLM_MASK_NINF 0xFF800000u
+
 #if defined(CGLM_SIMD_x86)
 /* Masking */
 #define glmm_setbits1(x) _mm_castsi128_ps(_mm_set1_epi32((int)x))
@@ -246,9 +254,8 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 #define glmm_andnot _mm_andnot_ps
 #define glmm_or _mm_or_ps
 #define glmm_xor _mm_xor_ps
-/* @TODO: consistent behaviour between SIMD implementations */
-#define glmm_max _mm_max_ps
-#define glmm_min _mm_min_ps
+#define glmm_pmax _mm_max_ps
+#define glmm_pmin _mm_min_ps
 
 /* Integer */
 #define glmm_128i __m128i
@@ -272,10 +279,7 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 #endif
 
 CGLM_INLINE __m128 glmm_load2(vec2 v) {
-#if defined(__AVX__) && 0
-  __m128 mask = glmm_setbits(0, 0, 0x80000000u, 0x80000000u);
-  return _mm_maskload_ps(v, _mm_castps_si128(mask));
-#elif defined(__SSE2__)
+#if defined(__SSE2__)
   return _mm_castpd_ps(_mm_load_sd((const double *)v));
 #else
   return _mm_set_ps(0.0f, 0.0f, v[1], v[0]);
@@ -287,10 +291,7 @@ CGLM_INLINE __m128 glmm_load2h(vec2 v) {
 }
 
 CGLM_INLINE void glmm_store2(vec2 dest, __m128 v) {
-#if defined(__AVX__) && 0
-  __m128 mask = glmm_setbits(0, 0, 0x80000000u, 0x80000000u);
-  _mm_maskstore_ps(dest, _mm_castps_si128(mask), v);
-#elif defined(__SSE2__)
+#if defined(__SSE2__)
   _mm_store_sd((double *)dest, _mm_castps_pd(v));
 #else
   dest[0] = _mm_cvtss_f32(glmm_splat_x(v));
@@ -302,10 +303,7 @@ CGLM_INLINE void glmm_store2(vec2 dest, __m128 v) {
  * @brief alternate implementation of glmm_load3
  */
 CGLM_INLINE __m128 glmm_load3u(vec3 v) {
-#if defined(__AVX__) && 0
-  __m128 mask = glmm_setbits(0, 0x80000000u, 0x80000000u, 0x80000000u);
-  return _mm_maskload_ps(v, _mm_castps_si128(mask));
-#elif defined(__SSE2__)
+#if defined(__SSE2__)
   __m128 low = _mm_castpd_ps(_mm_load_sd((const double *)v));
   __m128 high = _mm_load_ss(&v[2]);
   return _mm_movelh_ps(low, high);
@@ -318,10 +316,7 @@ CGLM_INLINE __m128 glmm_load3u(vec3 v) {
  * @brief alternate implementation of glmm_store3
  */
 CGLM_INLINE void glmm_store3u(vec3 dest, __m128 v) {
-#if defined(__AVX__) && 0
-  __m128 mask = glmm_setbits(0, 0x80000000u, 0x80000000u, 0x80000000u);
-  _mm_maskstore_ps(dest, _mm_castps_si128(mask), v);
-#elif defined(__SSE2__)
+#if defined(__SSE2__)
   _mm_store_sd((double *)dest, _mm_castps_pd(v));
   _mm_store_ss(&dest[2], glmm_splat_z(v));
 #else
@@ -356,11 +351,11 @@ static inline __m128 glmm_isnan(__m128 v) {
 }
 
 static inline __m128 glmm_isinf(__m128 v) {
-  return _mm_cmpeq_ps(glmm_abs(v), glmm_setbits1(0x7F800000u));
+  return _mm_cmpeq_ps(glmm_abs(v), glmm_setbits1(CGLM_MASK_PINF));
 }
 
 static inline __m128 glmm_signbit(__m128 v) {
-  return _mm_and_ps(v, glmm_setbits1(0x80000000u));
+  return _mm_and_ps(v, glmm_setbits1(CGLM_MASK_SIGN));
 }
 
 static inline __m128 glmm_sign(__m128 v) { /* 1.0 : -1.0 */
@@ -410,8 +405,8 @@ static inline __m128 glmm_round(__m128 v) {
 #if defined(__SSE4_1__)
   return _mm_round_ps(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
 #else
-  __m128 limit = glmm_setbits1(0x4B000000u);
-  __m128 sgn0 = glmm_setbits1(0x80000000u);
+  __m128 limit = glmm_setbits1(CGLM_MASK_LIMT);
+  __m128 sgn0 = glmm_setbits1(CGLM_MASK_SIGN);
   __m128 or0 = _mm_or_ps(_mm_and_ps(sgn0, v), limit); /* +/- limit */
   __m128 sub0 = _mm_sub_ps(_mm_add_ps(v, or0), or0);
   __m128 cmp0 = _mm_cmplt_ps(glmm_abs(v), limit);
@@ -434,7 +429,7 @@ static inline __m128 glmm_trunc(__m128 v) {
 #if defined(__SSE4_1__)
   return _mm_round_ps(v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
 #else
-  __m128 limit = glmm_setbits1(0x4B000000u);
+  __m128 limit = glmm_setbits1(CGLM_MASK_LIMT);
   __m128 cvt0 = _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
   __m128 cmp0 = _mm_cmplt_ps(glmm_abs(v), limit);
   return glmm_select(v, cvt0, cmp0);
@@ -480,13 +475,6 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define glmm_and(x, y) glmm_maskop(vandq_u32(vreinterpretq_u32_f32(x), vreinterpretq_u32_f32(y)))
 #define glmm_andnot(x, y) glmm_maskop(vbicq_u32(vreinterpretq_u32_f32(y), vreinterpretq_u32_f32(x)))
 #define glmm_or(x, y) glmm_maskop(vorrq_u32(vreinterpretq_u32_f32(x), vreinterpretq_u32_f32(y)))
-#if CGLM_ARM64
-  #define glmm_max vmaxnmq_f32
-  #define glmm_min vminnmq_f32
-#else
-  #define glmm_max vmaxq_f32
-  #define glmm_min vminq_f32
-#endif
 
 /* Integer */
 #define glmm_128i int32x4_t
@@ -566,14 +554,14 @@ static inline float32x4_t glmm_isnan(float32x4_t v) {
 }
 
 static inline float32x4_t glmm_isinf(float32x4_t v) {
-  uint32x4_t inf_mask = vdupq_n_u32(0x7F800000u);
-  uint32x4_t abs_mask = vdupq_n_u32(0x7FFFFFFFu); /* avoid vabsq_f32 */
+  uint32x4_t inf_mask = vdupq_n_u32(CGLM_MASK_PINF);
+  uint32x4_t abs_mask = vdupq_n_u32(CGLM_MASK_ABS); /* avoid vabsq_f32 */
   uint32x4_t abs0 = vandq_u32(vreinterpretq_u32_f32(v), abs_mask);
   return vreinterpretq_f32_u32(vceqq_f32(vreinterpretq_f32_u32(abs0), vreinterpretq_f32_u32(inf_mask)));
 }
 
 static inline float32x4_t glmm_signbit(float32x4_t v) {
-  uint32x4_t sgn0 = vdupq_n_u32(0x80000000u);
+  uint32x4_t sgn0 = vdupq_n_u32(CGLM_MASK_SIGN);
   return vreinterpretq_f32_u32(vandq_u32(sgn0, vreinterpretq_u32_f32(v)));
 }
 
@@ -603,7 +591,7 @@ static inline float32x4_t glmm_vdot(float32x4_t a, float32x4_t b) {
 
 static inline float32x4_t glmm_vrsqrteq(float32x4_t v) {
   float32x4_t rsqrt0 = vrsqrteq_f32(v);
-  uint32x4_t inf0 = vdupq_n_u32(0x7F800000u);
+  uint32x4_t inf0 = vdupq_n_u32(CGLM_MASK_PINF);
   uint32x4_t zer0 = vceqq_u32(inf0, vreinterpretq_u32_f32(rsqrt0));
   uint32x4_t and0 = vandq_u32(vmvnq_u32(zer0), vreinterpretq_u32_f32(rsqrt0));
   return vreinterpretq_f32_u32(and0);
@@ -628,6 +616,22 @@ static inline float32x4_t glmm_sqrt(float32x4_t v) {
 #endif
 }
 
+static inline float32x4_t glmm_pmax(float32x4_t a, float32x4_t b) {
+#if defined(CGLM_USE_FAST_MINMAX)
+  return vmaxq_f32(a, b);
+#else
+  return vbslq_f32(vcgtq_f32(a, b), a, b);
+#endif
+}
+
+static inline float32x4_t glmm_pmin(float32x4_t a, float32x4_t b) {
+#if defined(CGLM_USE_FAST_MINMAX)
+  return vminq_f32(a, b);
+#else
+  return vbslq_f32(vcltq_f32(a, b), a, b);
+#endif
+}
+
 static inline float32x4_t glmm_clamp(float32x4_t v, float32x4_t minVal, float32x4_t maxVal) {
 #if CGLM_ARM64
   return vminnmq_f32(vmaxnmq_f32(v, minVal), maxVal);
@@ -640,8 +644,8 @@ static inline float32x4_t glmm_round(float32x4_t v) {
 #if CGLM_ARM64
   return vrndnq_f32(v);
 #else
-  uint32x4_t sign = vdupq_n_u32(0x80000000u);
-  uint32x4_t limit = vdupq_n_u32(0x4B000000u);
+  uint32x4_t sign = vdupq_n_u32(CGLM_MASK_SIGN);
+  uint32x4_t limit = vdupq_n_u32(CGLM_MASK_LIMT);
   uint32x4_t or0 = vorrq_u32(vandq_u32(sign, vreinterpretq_u32_f32(v)), limit);
   uint32x4_t cmp0 = vcaltq_f32(v, vreinterpretq_f32_u32(limit));
   float32x4_t add0 = vaddq_f32(v, vreinterpretq_f32_u32(or0));
@@ -665,7 +669,7 @@ static inline float32x4_t glmm_trunc(float32x4_t v) {
 #if CGLM_ARM64
   return vrndq_f32(v);
 #else
-  uint32x4_t limit = vdupq_n_u32(0x4B000000u);
+  uint32x4_t limit = vdupq_n_u32(CGLM_MASK_LIMT);
   uint32x4_t cmp0 = vcaltq_f32(v, vreinterpretq_f32_u32(limit));
   float32x4_t cvt0 = vcvtq_f32_s32(vcvtq_s32_f32(v));
   return vbslq_f32(cmp0, cvt0, v);
@@ -681,25 +685,6 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
   uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1(1.0f)));
   return vaddq_f32(rnd0, vreinterpretq_f32_u32(and0));
 #endif
-}
-
-static inline float32x4_t glmm_vtrn1q(float32x4_t a) {
-#if CGLM_ARM64
-  return vtrn1q_f32(a, a);
-#else
-  float a0 = vgetq_lane_f32(a, 0);
-  float a2 = vgetq_lane_f32(a, 2);
-  float v[4] = { a0, a0, a2, a2 };
-  return vld1q_f32(v);
-#endif
-}
-
-static inline float32x4_t glmm_cross3(float32x4_t a, float32x4_t b) {
-  float32x4_t a_zxyz = vextq_f32(glmm_vtrn1q(a), a, 3);
-  float32x4_t b_zxyz = vextq_f32(glmm_vtrn1q(b), b, 3);
-  float32x4_t a_yzxy = vextq_f32(a_zxyz, a, 2);
-  float32x4_t b_yzxy = vextq_f32(b_zxyz, b, 2);
-  return vmlsq_f32(vmulq_f32(a_yzxy, b_zxyz), a_zxyz, b_yzxy);
 }
 #elif defined(CGLM_SIMD_WASM)
 /* Masking */
@@ -730,8 +715,8 @@ static inline float32x4_t glmm_cross3(float32x4_t a, float32x4_t b) {
 #define glmm_andnot(x, y) wasm_v128_andnot((y), (x))
 #define glmm_or wasm_v128_or
 #define glmm_xor wasm_v128_xor
-#define glmm_max(x, y) wasm_f32x4_pmax((y), (x))
-#define glmm_min(x, y) wasm_f32x4_pmin((y), (x))
+#define glmm_pmax(x, y) wasm_f32x4_pmax((y), (x))
+#define glmm_pmin(x, y) wasm_f32x4_pmin((y), (x))
 
 /* Integer */
 #define glmm_128i v128_t
@@ -774,11 +759,11 @@ static inline v128_t glmm_isnan(v128_t v) {
 }
 
 static inline v128_t glmm_isinf(v128_t v) {
-  return wasm_f32x4_eq(glmm_abs(v), glmm_setbits1(0x7F800000u));
+  return wasm_f32x4_eq(glmm_abs(v), glmm_setbits1(CGLM_MASK_PINF));
 }
 
 static inline v128_t glmm_signbit(v128_t v) {
-  return wasm_v128_and(v, glmm_setbits1(0x80000000u));
+  return wasm_v128_and(v, glmm_setbits1(CGLM_MASK_SIGN));
 }
 
 static inline v128_t glmm_sign(v128_t v) { /* 1.0 : -1.0 */
@@ -932,8 +917,8 @@ static inline glmm_128 glmm_log_poly(glmm_128 x) {
 /* @TODO: Inf/NaN handling */
 static inline glmm_128 glmm_frexp(glmm_128 v, glmm_128 *e) {
   glmm_128 num;
-  glmm_128 exp_mask = glmm_setbits1(0x7F800000u);
-  glmm_128 mant_mask = glmm_setbits1(0x807FFFFFu);
+  glmm_128 exp_mask = glmm_setbits1(CGLM_MASK_PINF);
+  glmm_128 mant_mask = glmm_setbits1(CGLM_MASK_MANT);
   glmm_128 zero_mask = glmm_eq(v, glmm_setzero());
 
   glmm_128i iexp = glmm_casti(glmm_and(v, exp_mask));
@@ -1103,8 +1088,8 @@ static inline glmm_128 glmm_log(glmm_128 v) {
   glmm_128 shift, exp, log;
   glmm_128 one = glmm_set1(1.0f);
   glmm_128 zero = glmm_setzero();
-  glmm_128 ninf = glmm_setbits1(0xFF800000u);
-  glmm_128 pinf = glmm_setbits1(0x7F800000u);
+  glmm_128 ninf = glmm_setbits1(CGLM_MASK_NINF);
+  glmm_128 pinf = glmm_setbits1(CGLM_MASK_PINF);
 
   /* Shift input */
   glmm_128 x = glmm_frexp(v, &exp);
@@ -1150,7 +1135,7 @@ static inline glmm_128 glmm_asinh(glmm_128 v) {
 
 static inline glmm_128 glmm_acosh(glmm_128 v) {
   glmm_128 one = glmm_set1(1.0f);
-  glmm_128 x = glmm_max(v, one);
+  glmm_128 x = glmm_pmax(v, one);
   glmm_128 sqrt0 = glmm_sqrt(glmm_sub(x, one));
   glmm_128 sqrt1 = glmm_sqrt(glmm_add(x, one));
   return glmm_log(glmm_add(x, glmm_mul(sqrt0, sqrt1)));
@@ -1165,7 +1150,7 @@ static inline glmm_128 glmm_atanh(glmm_128 v) {
 
   /* For |v| >= 1.0 return +/-inf */
   glmm_128 sgn0 = glmm_signbit(x);
-  glmm_128 inf = glmm_or(sgn0, glmm_setbits1(0x7F800000u));
+  glmm_128 inf = glmm_or(sgn0, glmm_setbits1(CGLM_MASK_PINF));
 
   /* For [-0.5, 0.5] use polynomial */
   glmm_128 atanh = glmm_atanh_poly(x);
@@ -2014,7 +1999,7 @@ CGLM_INLINE void glm_quat_mat4_simd(versor v, mat4 dest) {
  */
 CGLM_INLINE void glm_quat_conjugate_simd(versor q, versor dest) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
-  glmm_128 mask = glmm_setbits(0, 0x80000000u, 0x80000000u, 0x80000000u);
+  glmm_128 mask = glmm_setbits(0, CGLM_MASK_SIGN, CGLM_MASK_SIGN, CGLM_MASK_SIGN);
   glmm_store(dest, glmm_xor(glmm_load(q), mask));
 #else
   dest[0] = -q[0];
@@ -2144,7 +2129,6 @@ CGLM_INLINE void glm_quat_pow(versor q, float s, versor dest) {
  * @brief square root of quaternion
  */
 CGLM_INLINE void glm_quat_sqrt(versor q, versor dest) {
-  /* glm_quat_pow(q, 0.5f, dest); */
   float len = glm_quat_norm(q);
   if (glm_eq(len + q[3], 0.0f))
     glm_quat_identity(dest);
@@ -3177,6 +3161,7 @@ CGLM_INLINE size_t glm_mat4_hash(mat4 m) {
 /*
 ** {==================================================================
 ** euler.h
+** https://www.geometrictools.com/Documentation/EulerAngles.pdf
 ** ===================================================================
 */
 

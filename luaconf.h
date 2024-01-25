@@ -851,7 +851,7 @@
   #define LUA_NOINLINE
 #elif LUA_HAS_ATTRIBUTE(__always_inline__)
   #define LUA_INLINE inline __attribute__((__always_inline__))
-  #define LUA_NOINLINE inline __attribute__((__noinline__))
+  #define LUA_NOINLINE __attribute__((__noinline__))
 #else
   #define LUA_INLINE inline
   #define LUA_NOINLINE
@@ -932,7 +932,7 @@
 #elif LUA_GNUC_PREREQ(4, 5) || defined(__clang__) || defined(__INTEL_COMPILER)
   #define LUA_UNREACHABLE() __builtin_unreachable()
 #else
-  #define LUA_UNREACHABLE() do { } while (0)
+  #define LUA_UNREACHABLE() do { } while (0) /* UNREACHABLE */
 #endif
 
 /* Multi-line macro wrapper */
@@ -995,10 +995,6 @@
 #if LUAI_IS32INT
 /* #define LUA_EXT_FAT_TYPES */
 #endif
-
-/* Change the instruction position of 'k'; reducing Bx and sBx.
-** Temporary extension used for gathering VM statistics. */
-/* #define LUA_EXT_KPOSITION */
 
 /* Generalized object iteration; see documentation */
 #define LUA_EXT_ITERATION

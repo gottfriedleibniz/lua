@@ -35,24 +35,6 @@ enum OpMode {iABC, iABx, iAsBx, iAx, isJ};  /* basic instruction formats */
 /*
 ** size and position of opcode arguments.
 */
-#if defined(LUA_EXT_KPOSITION)
-#define SIZE_OP		7
-#define SIZE_A		8
-#define SIZE_B		8
-#define SIZE_C		8
-#define SIZE_Bx		(SIZE_C + SIZE_B)
-#define SIZE_Ax		(SIZE_Bx + SIZE_A + 1)
-#define SIZE_sJ		(SIZE_Bx + SIZE_A + 1)
-
-#define POS_OP		0
-#define POS_k		SIZE_OP
-#define POS_A		(POS_k + 1)
-#define POS_B		(POS_A + SIZE_A)
-#define POS_C		(POS_B + SIZE_B)
-#define POS_Bx		POS_B
-#define POS_Ax		(POS_OP + SIZE_OP)
-#define POS_sJ		(POS_OP + SIZE_OP)
-#else
 #define SIZE_C		8
 #define SIZE_B		8
 #define SIZE_Bx		(SIZE_C + SIZE_B + 1)
@@ -74,7 +56,6 @@ enum OpMode {iABC, iABx, iAsBx, iAx, isJ};  /* basic instruction formats */
 #define POS_Ax		POS_A
 
 #define POS_sJ		POS_A
-#endif
 
 
 /*

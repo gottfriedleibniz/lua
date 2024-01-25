@@ -535,7 +535,7 @@ Uses a modified (GNU make required) version of the makefile
 └> make
 
 # Run Lua
-└> ./lua
+└> ./lua ...
 
 # WSL/Windows: clang.exe
 └> make windows

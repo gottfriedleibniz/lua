@@ -48,14 +48,6 @@
 #endif
 #endif
 
-/*
-** @LuaExt: Emulate labels-as-values on compilers that do not support them. This
-** approach defers most responsibility to the CPUs branch predictor at a cost of
-** increased compile time and object size... with *unknown* benefit.
-*/
-#if !defined(LUA_USE_SWITCHGOTO)
-#define LUA_USE_SWITCHGOTO 0
-#endif
 
 
 /* limit for table tag-method chains (to avoid infinite loops) */
@@ -1230,18 +1222,6 @@ void luaV_finishOp (lua_State *L) {
 #define vmdispatch(x)	goto *disptab[x];
 #define vmcase(l)	L_##l:
 #define vmbreak		vmfetch(); vmdispatch(GET_OPCODE(i));
-#elif LUA_USE_SWITCHGOTO
-#define vmlabel(l)	case OP_##l: goto L_OP_##l;
-#define vmcase(l)	L_##l:
-#define vmbreak		vmfetch(); vmdispatch(GET_OPCODE(i));
-#define vmdispatch(o)                     \
-  switch (o) {                            \
-    LUA_XOP(vmlabel)                      \
-    default: {                            \
-      luaG_runerror(L, "unknown opcode"); \
-      LUA_UNREACHABLE();                  \
-    }                                     \
-  }
 #else
 #define vmdispatch(o)	switch(o)
 #define vmcase(l)	case l:
@@ -2121,7 +2101,7 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         vmbreak;
       }
 #endif
-#if !(LUA_USE_JUMPTABLE || LUA_USE_SWITCHGOTO)
+#if !(LUA_USE_JUMPTABLE)
       default: {  /* @LuaExt: see faster-cpython/ideas/issues/422 discussion */
         lua_assert(0);
         LUA_UNREACHABLE();
