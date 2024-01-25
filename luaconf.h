@@ -890,7 +890,8 @@
 /*
 @@ https://github.com/llvm/llvm-project/pull/76868
 */
-#if LUA_HAS_ATTRIBUTE(preserve_none) && defined(LUA_EXT_TAILVM)
+#if LUA_HAS_ATTRIBUTE(preserve_none) && defined(LUA_EXT_TAILVM) \
+  && (defined(__x86_64__) || defined(__aarch64__))
   #define LUA_PRESERVE_NONE __attribute__((preserve_none))
 #else
   #define LUA_PRESERVE_NONE /* PRESERVE_NONE */
@@ -899,7 +900,8 @@
 /*
 @@ https://clang.llvm.org/docs/AttributeReference.html#preserve-most
 */
-#if LUA_HAS_ATTRIBUTE(preserve_most) && defined(LUA_EXT_TAILVM)
+#if LUA_HAS_ATTRIBUTE(preserve_most) && defined(LUA_EXT_TAILVM) \
+  && (defined(__x86_64__) || defined(__aarch64__))
   #define LUA_PRESERVE_MOST __attribute__((preserve_most))
 #else
   #define LUA_PRESERVE_MOST /* PRESERVE_MOST */
@@ -908,7 +910,8 @@
 /*
 @@ https://clang.llvm.org/docs/AttributeReference.html#preserve-all
 */
-#if LUA_HAS_ATTRIBUTE(preserve_most) && defined(LUA_EXT_TAILVM)
+#if LUA_HAS_ATTRIBUTE(preserve_most) && defined(LUA_EXT_TAILVM) \
+  && (defined(__x86_64__) || defined(__aarch64__))
   #define LUA_PRESERVE_ALL __attribute__((preserve_all))
 #else
   #define LUA_PRESERVE_ALL /* PRESERVE_ALL */
