@@ -1691,7 +1691,7 @@ int luaglm_reflect(lua_State *L) {
         break;
       }
     }
-    glm_pushvid(vvaltt(o1), glm_vec4_reflect, i, n);
+    glm_pushvid(vvaltt(o1), glm_vec4_reflect_simd, i, n);
   }
   else if (ttisnumber(o1) && ttisnumber(o2)) {
     lua_Number i = nvalue(o1);
@@ -1719,7 +1719,7 @@ int luaglm_refract(lua_State *L) {
         break;
       }
     }
-    glm_pushvid(vvaltt(o1), glm_vec4_refract, i, n, glm_fv(o3));
+    glm_pushvid(vvaltt(o1), glm_vec4_refract_simd, i, n, glm_fv(o3));
   }
   else if (ttisnumber(o1) && ttisnumber(o2) && ttisnumber(o3)) {
     lua_Number i = nvalue(o1);
