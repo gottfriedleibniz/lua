@@ -1,6 +1,6 @@
 # LuaGLM
 
-A Lua 5.4.6 runtime providing vector, quaternion, and matrix basic types with an
+A Lua 5.4.7 runtime providing vector, quaternion, and matrix basic types with an
 assortment of GLSL built-in functions.
 
 ## Vectors and Quaternions

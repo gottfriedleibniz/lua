@@ -785,19 +785,8 @@ void luaK_dischargevars (FuncState *fs, expdesc *e) {
       break;
     }
     case VLOCAL: {  /* already in a register */
-      /*
-      ** @NVC: will discard e->u.info = e->u.var.ridx:
-      **   13df: ... ; switch jump
-      **   13e6: 41 c7 06 08 00 00 00    movl   $0x8,(%r14)
-      **   13ed: e9 8e 02 00 00          jmp    1680 <luaK_dischargevars+0x2c0>
-      */
-#if defined(__NVCOMPILER) && (__NVCOMPILER_MAJOR__ < 23 \
-                          || (__NVCOMPILER_MAJOR__ == 23 && __NVCOMPILER_MINOR__ < 9))
-      volatile lu_byte ridx = e->u.var.ridx;
-      e->u.info = cast_int(ridx);
-#else
-      e->u.info = e->u.var.ridx;
-#endif
+      int temp = e->u.var.ridx;
+      e->u.info = temp;  /* (can't do a direct assignment; values overlap) */
       e->k = VNONRELOC;  /* becomes a non-relocatable value */
       break;
     }
@@ -1314,8 +1303,9 @@ void luaK_indexed (FuncState *fs, expdesc *t, expdesc *k) {
   if (t->k == VUPVAL && !isKstr(fs, k))  /* upvalue indexed by non 'Kstr'? */
     luaK_exp2anyreg(fs, t);  /* put it in a register */
   if (t->k == VUPVAL) {
+    int temp = t->u.info;  /* upvalue index */
     lua_assert(isKstr(fs, k));
-    t->u.ind.t = t->u.info;  /* upvalue index */
+    t->u.ind.t = temp;  /* (can't do a direct assignment; values overlap) */
     t->u.ind.idx = k->u.info;  /* literal short string */
     t->k = VINDEXUP;
   }
