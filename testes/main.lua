@@ -465,6 +465,11 @@ else
 end
 checkprogout("b\nc\nd\ne\n\n")
 
+-- input interrupted in continuation line
+prepfile("a.\n")
+RUN([[lua -i < %s > /dev/null 2> %s]], prog, out)
+checkprogout("near <eof>\n")
+
 local prompt = "alo" -- @TODO: ensure libreadline (not libedit)
 prepfile[[ --
 a = 2
