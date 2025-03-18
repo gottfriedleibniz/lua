@@ -1363,7 +1363,7 @@ int luaglm_pow(lua_State *L) {
 /* 8.3. Common Functions */
 int luaglm_abs(lua_State *L) { COMPONENT_FUNC5(glm_vec4_abs, l_mathop(fabs), glm_pushnumber, l_absI, glm_pushinteger); }
 int luaglm_sign(lua_State *L) { COMPONENT_FUNC5(glm_vec4_sign, l_signN, glm_pushnumber, l_signI, glm_pushinteger); }
-int luaglm_floor(lua_State *L) { COMPONENT_FUNC5(glm_vec4_floor, l_mathop(floor), glm_pushnumint, l_nopI, glm_pushinteger); }
+int luaglm_floor(lua_State *L) { COMPONENT_FUNC5(glm_vec4_floor_simd, l_mathop(floor), glm_pushnumint, l_nopI, glm_pushinteger); }
 int luaglm_ceil(lua_State *L) { COMPONENT_FUNC5(glm_vec4_ceil, l_mathop(ceil), glm_pushnumint, l_nopI, glm_pushinteger); }
 int luaglm_trunc(lua_State *L) { COMPONENT_FUNC5(glm_vec4_trunc, l_mathop(trunc), glm_pushnumint, l_nopI, glm_pushinteger); }
 int luaglm_round(lua_State *L) { COMPONENT_FUNC5(glm_vec4_round, l_roundN, glm_pushnumint, l_nopI, glm_pushinteger); }
@@ -1385,7 +1385,7 @@ int luaglm_mod(lua_State *L) {
     return 1;
   }
   /* Implementation different from GLSL to be consistent with lmathlib */
-  COMPONENT_BFUNC3(glm_vec4_mod, l_mathop(fmod), glm_pushnumber);
+  COMPONENT_BFUNC3(glm_vec4_mod_simd, l_mathop(fmod), glm_pushnumber);
 }
 
 int luaglm_modf(lua_State *L) { /* math_modf compatible */
@@ -2761,7 +2761,7 @@ int lglm_IDIV(lua_State *L, StkId ra, TValue *rb, TValue *rc) {
     else {
       return 0;
     }
-    glm_vid_op(ra, vvaltt(rb), glm_vec4_floor, dest);
+    glm_vid_op(ra, vvaltt(rb), glm_vec4_floor_simd, dest);
     return 1;
   }
   UNUSED(L);
@@ -2776,9 +2776,9 @@ int lglm_IDIV(lua_State *L, StkId ra, TValue *rb, TValue *rc) {
 int lglm_MOD(lua_State *L, StkId ra, TValue *rb, TValue *rc) {
   if (ttisvector(rb)) {
     if (tteq(rb, rc)) /* vec % vec */
-      glm_vid_op(ra, vvaltt(rb), glm_vec4_mod, glm_vid(rb), glm_vid(rc));
+      glm_vid_op(ra, vvaltt(rb), glm_vec4_mod_simd, glm_vid(rb), glm_vid(rc));
     else if (ttisnumber(rc)) /* vec % scalar */
-      glm_vid_op(ra, vvaltt(rb), glm_vec4_mods, glm_vid(rb), glm_fv(rc));
+      glm_vid_op(ra, vvaltt(rb), glm_vec4_mods_simd, glm_vid(rb), glm_fv(rc));
     else
       return 0;
   }

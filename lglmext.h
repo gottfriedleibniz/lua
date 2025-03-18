@@ -243,7 +243,7 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 
 #define glmm_setbits1(x) _mm_castsi128_ps(_mm_set1_epi32((int)x))
 #define glmm_setbits(w, z, y, x) _mm_castsi128_ps(_mm_set_epi32((int)w, (int)z, (int)y, (int)x))
-#define glmm_maskstore(p, a) glmm_store(p, _mm_and_ps(a, glmm_set1(1.0f)))
+#define glmm_maskstore(p, a) glmm_store(p, _mm_and_ps(a, glmm_set1_rval(1.0f)))
 #else
 #define GLMM_NAME_MASK(N) N##_TU
 #define GLMM_DECLARE_MASK(N, V) \
@@ -265,7 +265,15 @@ GLMM_DECLARE_MASK(GLMM_MASK_ALL, GLM_MASK_ALL)
 
 #define glmm_setbits1(x) _mm_set1_ps((x))
 #define glmm_setbits(w, z, y, x) _mm_set_ps((w), (z), (y), (x))
-#define glmm_maskstore(p, a) glmm_store(p, _mm_and_ps(a, glmm_set1(1.0f)))
+#define glmm_maskstore(p, a) glmm_store(p, _mm_and_ps(a, glmm_set1_rval(1.0f)))
+#endif
+
+/* Deprecated and removed after v0.9.6 */
+#if !defined(glmm_shuff2)
+  #define glmm_shuff2(a, b, z0, y0, x0, w0, z1, y1, x1, w1)             \
+    glmm_shuff1(                                                        \
+      _mm_shuffle_ps(a, b, _MM_SHUFFLE(z0, y0, x0, w0)), z1, y1, x1, w1 \
+    )
 #endif
 
 /* Abstractions */
@@ -392,7 +400,7 @@ static inline __m128 glmm_signbit(__m128 v) {
 }
 
 static inline __m128 glmm_sign(__m128 v) { /* 1.0 : -1.0 */
-  return _mm_or_ps(glmm_signbit(v), glmm_set1(1.0f));
+  return _mm_or_ps(glmm_signbit(v), glmm_set1_rval(1.0f));
 }
 
 static inline __m128 glmm_negate(__m128 v) {
@@ -429,13 +437,13 @@ static inline __m256 glmm256_approx(__m256 x, __m256 y, __m256 eps) {
 
 static inline __m128 glmm_invsqrt(__m128 v) {
 #if 1
-  return _mm_div_ps(glmm_set1(1.0f), _mm_sqrt_ps(v));
+  return _mm_div_ps(glmm_set1_rval(1.0f), _mm_sqrt_ps(v));
 #else
   __m128 rsqrt0 = _mm_rsqrt_ps(v);
   __m128 mul0 = _mm_mul_ps(_mm_mul_ps(v, rsqrt0), rsqrt0);
   return _mm_mul_ps(
-    _mm_mul_ps(glmm_set1(0.5f), rsqrt0),
-    _mm_sub_ps(glmm_set1(3.0f), mul0)
+    _mm_mul_ps(glmm_set1_rval(0.5f), rsqrt0),
+    _mm_sub_ps(glmm_set1_rval(3.0f), mul0)
   );
 #endif
 }
@@ -467,7 +475,7 @@ static inline __m128 glmm_floor(__m128 v) {
 #else
   __m128 rnd0 = glmm_round(v);
   __m128 cmp0 = _mm_cmplt_ps(v, rnd0);
-  __m128 and0 = _mm_and_ps(cmp0, glmm_set1(1.0f));
+  __m128 and0 = _mm_and_ps(cmp0, glmm_set1_rval(1.0f));
   return _mm_sub_ps(rnd0, and0);
 #endif
 }
@@ -489,7 +497,7 @@ static inline __m128 glmm_ceil(__m128 v) {
 #else
   __m128 rnd0 = glmm_round(v);
   __m128 cmp0 = _mm_cmpgt_ps(v, rnd0);
-  __m128 and0 = _mm_and_ps(cmp0, glmm_set1(1.0f));
+  __m128 and0 = _mm_and_ps(cmp0, glmm_set1_rval(1.0f));
   return _mm_add_ps(rnd0, and0);
 #endif
 }
@@ -510,14 +518,19 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define GLMM_MASK_NINF GLM_MASK_NINF
 #define GLMM_MASK_ALL  GLM_MASK_ALL
 
+/* Temporary: missing from arm.h */
+#if !defined(glmm_set1_rval)
+  #define glmm_set1_rval glmm_set1
+#endif
+
 #define glmm_setbits1(x) vreinterpretq_f32_u32(vdupq_n_u32(x))
 #define glmm_maskop(x) vreinterpretq_f32_u32(x)
-#define glmm_maskstore(p, a) glmm_store(p, glmm_maskop(vandq_u32(vreinterpretq_u32_f32(a), vreinterpretq_u32_f32(glmm_set1(1.0f)))))
+#define glmm_maskstore(p, a) glmm_store(p, glmm_maskop(vandq_u32(vreinterpretq_u32_f32(a), vreinterpretq_u32_f32(glmm_set1_rval(1.0f)))))
 
 /* Abstractions */
 #define glmm_casti vreinterpretq_s32_f32
 #define glmm_cvtt vcvtq_s32_f32
-#define glmm_setzero() glmm_set1(0.0f)
+#define glmm_setzero() glmm_set1_rval(0.0f)
 #define glmm_add vaddq_f32
 #define glmm_sub vsubq_f32
 #define glmm_mul vmulq_f32
@@ -579,7 +592,7 @@ static inline float32x4_t glmm_select(float32x4_t a, float32x4_t b, float32x4_t 
 }
 
 static inline bool glmm_all(float32x4_t v) {
-  uint32x4_t eq0 = vceqq_f32(v, glmm_set1(0.0f));
+  uint32x4_t eq0 = vceqq_f32(v, glmm_set1_rval(0.0f));
 #if CGLM_ARM64
   uint32x4_t min0 = vpmaxq_u32(eq0, eq0);
   uint32x4_t min1 = vpmaxq_u32(min0, min0);
@@ -592,7 +605,7 @@ static inline bool glmm_all(float32x4_t v) {
 }
 
 static inline bool glmm_any(float32x4_t v) {
-  uint32x4_t eq0 = vceqq_f32(v, glmm_set1(0.0f));
+  uint32x4_t eq0 = vceqq_f32(v, glmm_set1_rval(0.0f));
 #if CGLM_ARM64
   uint32x4_t min0 = vpminq_u32(eq0, eq0);
   uint32x4_t min1 = vpminq_u32(min0, min0);
@@ -622,7 +635,7 @@ static inline float32x4_t glmm_signbit(float32x4_t v) {
 
 static inline float32x4_t glmm_sign(float32x4_t v) {
   uint32x4_t mask = vcgeq_f32(v, glmm_setzero());
-  return glmm_select(glmm_set1(-1.0f), glmm_set1(1.0f), glmm_maskop(mask));
+  return glmm_select(glmm_set1_rval(-1.0f), glmm_set1_rval(1.0f), glmm_maskop(mask));
 }
 
 static inline float32x4_t glmm_negate(float32x4_t v) {
@@ -631,17 +644,6 @@ static inline float32x4_t glmm_negate(float32x4_t v) {
 
 static inline float32x4_t glmm_approx(float32x4_t x, float32x4_t y, float32x4_t eps) {
   return vreinterpretq_f32_u32(vcaleq_f32(vsubq_f32(x, y), eps));
-}
-
-static inline float32x4_t glmm_vdot(float32x4_t a, float32x4_t b) {
-#if CGLM_ARM64
-  return vdupq_n_f32(vaddvq_f32(vmulq_f32(a, b)));
-#else
-  float32x4_t mul0 = vmulq_f32(a, b);
-  float32x2_t add0 = vadd_f32(vget_low_f32(mul0), vget_high_f32(mul0));
-  float32x2_t add1 = vpadd_f32(add0, add0);
-  return vcombine_f32(add1, add1);
-#endif
 }
 
 static inline float32x4_t glmm_vrsqrteq(float32x4_t v) {
@@ -654,7 +656,7 @@ static inline float32x4_t glmm_vrsqrteq(float32x4_t v) {
 
 static inline float32x4_t glmm_invsqrt(float32x4_t v) {
 #if CGLM_ARM64
-  return vdivq_f32(glmm_set1(1.0f), vsqrtq_f32(v));
+  return vdivq_f32(glmm_set1_rval(1.0f), vsqrtq_f32(v));
 #else
   float32x4_t s = glmm_vrsqrteq(v);
   s = vmulq_f32(s, vrsqrtsq_f32(vmulq_f32(v, s), s));
@@ -715,7 +717,7 @@ static inline float32x4_t glmm_floor(float32x4_t v) {
 #else
   float32x4_t rnd0 = glmm_round(v);
   uint32x4_t cmp0 = vcltq_f32(v, rnd0);
-  uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1(1.0f)));
+  uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1_rval(1.0f)));
   return vsubq_f32(rnd0, vreinterpretq_f32_u32(and0));
 #endif
 }
@@ -737,7 +739,7 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
 #else
   float32x4_t rnd0 = glmm_round(v);
   uint32x4_t cmp0 = vcgtq_f32(v, rnd0);
-  uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1(1.0f)));
+  uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1_rval(1.0f)));
   return vaddq_f32(rnd0, vreinterpretq_f32_u32(and0));
 #endif
 }
@@ -753,12 +755,12 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
 
 #define glmm_setbits1(x) wasm_i32x4_splat((int)x)
 #define glmm_setbits(w, z, y, x) wasm_i32x4_make((int)x, (int)y, (int)z, (int)w)
-#define glmm_maskstore(p, a) glmm_store(p, wasm_v128_and(a, glmm_set1(1.0f)))
+#define glmm_maskstore(p, a) glmm_store(p, wasm_v128_and(a, glmm_set1_rval(1.0f)))
 
 /* Abstractions */
 #define glmm_casti(x) (x)
 #define glmm_cvtt wasm_i32x4_trunc_sat_f32x4
-#define glmm_setzero() glmm_set1(0.0f)
+#define glmm_setzero() glmm_set1_rval(0.0f)
 #define glmm_add wasm_f32x4_add
 #define glmm_sub wasm_f32x4_sub
 #define glmm_mul wasm_f32x4_mul
@@ -830,7 +832,7 @@ static inline v128_t glmm_signbit(v128_t v) {
 }
 
 static inline v128_t glmm_sign(v128_t v) { /* 1.0 : -1.0 */
-  return wasm_v128_or(glmm_signbit(v), glmm_set1(1.0f));
+  return wasm_v128_or(glmm_signbit(v), glmm_set1_rval(1.0f));
 }
 
 static inline v128_t glmm_negate(v128_t v) {
@@ -848,7 +850,7 @@ static inline v128_t glmm_clamp(v128_t v, v128_t minVal, v128_t maxVal) {
 }
 
 static inline v128_t glmm_invsqrt(v128_t v) {
-  return wasm_f32x4_div(glmm_set1(1.0f), wasm_f32x4_sqrt(v));
+  return wasm_f32x4_div(glmm_set1_rval(1.0f), wasm_f32x4_sqrt(v));
 }
 #endif
 /* }================================================================== */
@@ -874,12 +876,12 @@ static inline v128_t glmm_invsqrt(v128_t v) {
 static inline void glmm_sincos_poly(glmm_128 x, glmm_128 *sin, glmm_128 *cos) {
   glmm_128 x2 = glmm_mul(x, x);
   glmm_128 x3 = glmm_mul(x2, x);
-  glmm_128 s0 = glmm_fmadd(x2, glmm_set1(-0.0001950727f), glmm_set1(0.0083320758f));
-  glmm_128 c0 = glmm_fmadd(x2, glmm_set1(-0.0013602249f), glmm_set1(0.0416566950f));
-  glmm_128 s1 = glmm_fmadd(x2, s0, glmm_set1(-0.1666665247f));
-  glmm_128 c1 = glmm_fmadd(x2, c0, glmm_set1(-0.4999990225f));
+  glmm_128 s0 = glmm_fmadd(x2, glmm_set1_rval(-0.0001950727f), glmm_set1_rval(0.0083320758f));
+  glmm_128 c0 = glmm_fmadd(x2, glmm_set1_rval(-0.0013602249f), glmm_set1_rval(0.0416566950f));
+  glmm_128 s1 = glmm_fmadd(x2, s0, glmm_set1_rval(-0.1666665247f));
+  glmm_128 c1 = glmm_fmadd(x2, c0, glmm_set1_rval(-0.4999990225f));
   *sin = glmm_fmadd(x3, s1, x);
-  *cos = glmm_fmadd(x2, c1, glmm_set1(1.0f));
+  *cos = glmm_fmadd(x2, c1, glmm_set1_rval(1.0f));
 }
 
 /*!
@@ -888,11 +890,11 @@ static inline void glmm_sincos_poly(glmm_128 x, glmm_128 *sin, glmm_128 *cos) {
 static inline glmm_128 glmm_tan_poly(glmm_128 x) {
   glmm_128 x2 = glmm_mul(x, x);
   glmm_128 x3 = glmm_mul(x2, x);
-  glmm_128 c0 = glmm_fmadd(glmm_set1(9.3854018554e-3f), x2, glmm_set1(3.1199223269e-3f));
-  glmm_128 c1 = glmm_fmadd(c0, x2, glmm_set1(2.4430135452e-2f));
-  glmm_128 c2 = glmm_fmadd(c1, x2, glmm_set1(5.3411280700e-2f));
-  glmm_128 c3 = glmm_fmadd(c2, x2, glmm_set1(1.3338799408e-1f));
-  glmm_128 c4 = glmm_fmadd(c3, x2, glmm_set1(3.3333156854e-1f));
+  glmm_128 c0 = glmm_fmadd(glmm_set1_rval(9.3854018554e-3f), x2, glmm_set1_rval(3.1199223269e-3f));
+  glmm_128 c1 = glmm_fmadd(c0, x2, glmm_set1_rval(2.4430135452e-2f));
+  glmm_128 c2 = glmm_fmadd(c1, x2, glmm_set1_rval(5.3411280700e-2f));
+  glmm_128 c3 = glmm_fmadd(c2, x2, glmm_set1_rval(1.3338799408e-1f));
+  glmm_128 c4 = glmm_fmadd(c3, x2, glmm_set1_rval(3.3333156854e-1f));
   return glmm_fmadd(x3, c4, x);
 }
 
@@ -902,9 +904,9 @@ static inline glmm_128 glmm_tan_poly(glmm_128 x) {
 static inline glmm_128 glmm_atan_poly(glmm_128 x) {
   glmm_128 x2 = glmm_mul(x, x);
   glmm_128 x3 = glmm_mul(x2, x);
-  glmm_128 c0 = glmm_fmadd(x2, glmm_set1(8.05374449538e-2f), glmm_set1(-1.38776856032e-1f));
-  glmm_128 c1 = glmm_fmadd(x2, c0, glmm_set1(1.99777106478e-1f));
-  glmm_128 c2 = glmm_fmadd(x2, c1, glmm_set1(-3.33329491539e-1f));
+  glmm_128 c0 = glmm_fmadd(x2, glmm_set1_rval(8.05374449538e-2f), glmm_set1_rval(-1.38776856032e-1f));
+  glmm_128 c1 = glmm_fmadd(x2, c0, glmm_set1_rval(1.99777106478e-1f));
+  glmm_128 c2 = glmm_fmadd(x2, c1, glmm_set1_rval(-3.33329491539e-1f));
   return glmm_fmadd(x3, c2, x);
 }
 
@@ -914,12 +916,12 @@ static inline glmm_128 glmm_atan_poly(glmm_128 x) {
 static inline glmm_128 glmm_acos_poly(glmm_128 x) {
   glmm_128 x2 = glmm_mul(x, x);
   glmm_128 x4 = glmm_mul(x2, x2);
-  glmm_128 l0 = glmm_fmadd(x, glmm_set1(-0.0501743046f), glmm_set1(0.0889789874f));
-  glmm_128 h0 = glmm_fmadd(x, glmm_set1(-0.0012624911f), glmm_set1(0.0066700901f));
-  glmm_128 l1 = glmm_fmadd(x, l0, glmm_set1(-0.2145988016f));
-  glmm_128 h1 = glmm_fmadd(x, h0, glmm_set1(-0.0170881256f));
-  glmm_128 l2 = glmm_fmadd(x, l1, glmm_set1(1.5707963050f));
-  glmm_128 h2 = glmm_fmadd(x, h1, glmm_set1(0.0308918810f));
+  glmm_128 l0 = glmm_fmadd(x, glmm_set1_rval(-0.0501743046f), glmm_set1_rval(0.0889789874f));
+  glmm_128 h0 = glmm_fmadd(x, glmm_set1_rval(-0.0012624911f), glmm_set1_rval(0.0066700901f));
+  glmm_128 l1 = glmm_fmadd(x, l0, glmm_set1_rval(-0.2145988016f));
+  glmm_128 h1 = glmm_fmadd(x, h0, glmm_set1_rval(-0.0170881256f));
+  glmm_128 l2 = glmm_fmadd(x, l1, glmm_set1_rval(1.5707963050f));
+  glmm_128 h2 = glmm_fmadd(x, h1, glmm_set1_rval(0.0308918810f));
   return glmm_fmadd(h2, x4, l2);
 }
 
@@ -929,15 +931,15 @@ static inline glmm_128 glmm_acos_poly(glmm_128 x) {
 static inline glmm_128 glmm_tanh_poly(glmm_128 x) {
   glmm_128 p, q;
   glmm_128 x2 = glmm_mul(x, x);
-  p = glmm_fmadd(x2, glmm_set1(-2.7607684774e-16f), glmm_set1(2.0001879048e-13f));
-  p = glmm_fmadd(p, x2, glmm_set1(-8.6046715221e-11f));
-  p = glmm_fmadd(p, x2, glmm_set1(5.1222970903e-8f));
-  p = glmm_fmadd(p, x2, glmm_set1(1.4857223571e-5f));
-  p = glmm_fmadd(p, x2, glmm_set1(6.3726192887e-4f));
-  p = glmm_fmadd(p, x2, glmm_set1(4.8935245589e-3f));
-  q = glmm_fmadd(x2, glmm_set1(1.1982583946e-6f), glmm_set1(1.1853470568e-4f));
-  q = glmm_fmadd(q, x2, glmm_set1(2.2684346324e-3f));
-  q = glmm_fmadd(q, x2, glmm_set1(4.8935245589e-3f));
+  p = glmm_fmadd(x2, glmm_set1_rval(-2.7607684774e-16f), glmm_set1_rval(2.0001879048e-13f));
+  p = glmm_fmadd(p, x2, glmm_set1_rval(-8.6046715221e-11f));
+  p = glmm_fmadd(p, x2, glmm_set1_rval(5.1222970903e-8f));
+  p = glmm_fmadd(p, x2, glmm_set1_rval(1.4857223571e-5f));
+  p = glmm_fmadd(p, x2, glmm_set1_rval(6.3726192887e-4f));
+  p = glmm_fmadd(p, x2, glmm_set1_rval(4.8935245589e-3f));
+  q = glmm_fmadd(x2, glmm_set1_rval(1.1982583946e-6f), glmm_set1_rval(1.1853470568e-4f));
+  q = glmm_fmadd(q, x2, glmm_set1_rval(2.2684346324e-3f));
+  q = glmm_fmadd(q, x2, glmm_set1_rval(4.8935245589e-3f));
   return glmm_div(glmm_mul(p, x), q);
 }
 
@@ -946,10 +948,10 @@ static inline glmm_128 glmm_tanh_poly(glmm_128 x) {
  */
 static inline glmm_128 glmm_atanh_poly(glmm_128 x) {
   glmm_128 x2 = glmm_mul(x, x);
-  glmm_128 z = glmm_fmadd(glmm_set1(0.1819281280f), x2, glmm_set1(8.2311116158e-2f));
-  z = glmm_fmadd(x2, z, glmm_set1(0.1467213183f));
-  z = glmm_fmadd(x2, z, glmm_set1(0.1997792422f));
-  z = glmm_fmadd(x2, z, glmm_set1(0.3333373963f));
+  glmm_128 z = glmm_fmadd(glmm_set1_rval(0.1819281280f), x2, glmm_set1_rval(8.2311116158e-2f));
+  z = glmm_fmadd(x2, z, glmm_set1_rval(0.1467213183f));
+  z = glmm_fmadd(x2, z, glmm_set1_rval(0.1997792422f));
+  z = glmm_fmadd(x2, z, glmm_set1_rval(0.3333373963f));
   z = glmm_fmadd(glmm_mul(x, x2), z, x);
   return z;
 }
@@ -959,14 +961,14 @@ static inline glmm_128 glmm_atanh_poly(glmm_128 x) {
  */
 static inline glmm_128 glmm_exp_poly(glmm_128 x) {
   glmm_128 x2 = glmm_mul(x, x);
-  glmm_128 z = glmm_set1(1.9875691500e-4f);
-  z = glmm_fmadd(z, x, glmm_set1(1.3981999507e-3f));
-  z = glmm_fmadd(z, x, glmm_set1(8.3334519073e-3f));
-  z = glmm_fmadd(z, x, glmm_set1(4.1665795894e-2f));
-  z = glmm_fmadd(z, x, glmm_set1(1.6666665459e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(5.0000001201e-1f));
+  glmm_128 z = glmm_set1_rval(1.9875691500e-4f);
+  z = glmm_fmadd(z, x, glmm_set1_rval(1.3981999507e-3f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(8.3334519073e-3f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(4.1665795894e-2f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(1.6666665459e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(5.0000001201e-1f));
   z = glmm_fmadd(z, x2, x);
-  return glmm_add(z, glmm_set1(1.0f));
+  return glmm_add(z, glmm_set1_rval(1.0f));
 }
 
 /*!
@@ -974,16 +976,27 @@ static inline glmm_128 glmm_exp_poly(glmm_128 x) {
  */
 static inline glmm_128 glmm_log_poly(glmm_128 x) {
   glmm_128 x2 = glmm_mul(x, x);
-  glmm_128 z = glmm_set1(7.0376836292e-2f);
-  z = glmm_fmadd(z, x, glmm_set1(-1.1514610310e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(1.1676998740e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(-1.2420140846e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(1.4249322787e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(-1.6668057665e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(2.0000714765e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(-2.4999993993e-1f));
-  z = glmm_fmadd(z, x, glmm_set1(3.3333331174e-1f));
+  glmm_128 z = glmm_set1_rval(7.0376836292e-2f);
+  z = glmm_fmadd(z, x, glmm_set1_rval(-1.1514610310e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(1.1676998740e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(-1.2420140846e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(1.4249322787e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(-1.6668057665e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(2.0000714765e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(-2.4999993993e-1f));
+  z = glmm_fmadd(z, x, glmm_set1_rval(3.3333331174e-1f));
   return glmm_mul(glmm_mul(x, z), x2);
+}
+
+/*!
+ * @brief "Extended precision modular arithmetic"; improving native precision
+ *        after range reduction: ((x - y * DP1) - y * DP2) - y * DP3
+ */
+static inline glmm_128 glmm_quadrant_reduce(glmm_128 qf, glmm_128 v) {
+  glmm_128 fma0 = glmm_fmadd(qf, glmm_set1_rval(-1.5703125f), v);
+  glmm_128 fma1 = glmm_fmadd(qf, glmm_set1_rval(-4.837512969970703e-4f), fma0);
+  glmm_128 fma2 = glmm_fmadd(qf, glmm_set1_rval(-7.549789948768648e-8f), fma1);
+  return fma2;
 }
 
 /* @TODO: Inf/NaN handling */
@@ -998,7 +1011,7 @@ static inline glmm_128 glmm_frexp(glmm_128 v, glmm_128 *e) {
   iexp = glmm_iandnot(glmm_casti(zero_mask), iexp);
   *e = glmm_icvt(iexp);
 
-  num = glmm_or(glmm_and(v, mant_mask), glmm_set1(0.5f));
+  num = glmm_or(glmm_and(v, mant_mask), glmm_set1_rval(0.5f));
   num = glmm_or(glmm_and(v, zero_mask), glmm_andnot(zero_mask, num));
   return num;
 }
@@ -1009,16 +1022,11 @@ static inline void glmm_sincos(glmm_128 v, glmm_128 *outSin, glmm_128 *outCos) {
   glmm_128i zero = glmm_isetzero();
 
   /* Range reduction & quadrant; avoiding _mm_cvtps_epi32 */
-  glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1(GLM_2_PIf)));
+  glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1_rval(GLM_2_PIf)));
   glmm_128i quad = glmm_cvtt(qf);
   glmm_128i sinOffset = glmm_iand(quad, glmm_iset1(3));
   glmm_128i cosOffset = glmm_iand(glmm_iadd(quad, glmm_iset1(1)), glmm_iset1(3));
-
-  /* "Extended precision modular arithmetic" */
-  glmm_128 fma0 = glmm_fmadd(qf, glmm_set1(-1.5703125f), v);
-  glmm_128 fma1 = glmm_fmadd(qf, glmm_set1(-4.837512969970703e-4f), fma0);
-  glmm_128 x = glmm_fmadd(qf, glmm_set1(-7.549789948768648e-8f), fma1);
-  glmm_sincos_poly(x, &sinx, &cosx);
+  glmm_sincos_poly(glmm_quadrant_reduce(qf, v), &sinx, &cosx);
 
   /* Select cosine when the offset is odd, sin when even */
   sinMask = glmm_ieq(glmm_iand(sinOffset, glmm_iset1(1)), zero);
@@ -1035,34 +1043,29 @@ static inline void glmm_sincos(glmm_128 v, glmm_128 *outSin, glmm_128 *outCos) {
 
 static inline glmm_128 glmm_tan(glmm_128 v) {
   /* Range reduction & quadrant */
-  glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1(GLM_2_PIf)));
+  glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1_rval(GLM_2_PIf)));
   glmm_128i tanOffset = glmm_iand(glmm_cvtt(qf), glmm_iset1(3));
   glmm_128 tanMask = glmm_ieq(glmm_iand(tanOffset, glmm_iset1(1)), glmm_isetzero());
-
-  /* "Extended precision modular arithmetic" */
-  glmm_128 fma0 = glmm_fmadd(qf, glmm_set1(-1.5703125f), v);
-  glmm_128 fma1 = glmm_fmadd(qf, glmm_set1(-4.837512969970703e-4f), fma0);
-  glmm_128 x = glmm_fmadd(qf, glmm_set1(-7.549789948768648e-8f), fma1);
-  glmm_128 tanx = glmm_tan_poly(x);
+  glmm_128 tanx = glmm_tan_poly(glmm_quadrant_reduce(qf, v));
 
   /* Invert when the offset is even; avoid division-by-zero */
   glmm_128 cmp0 = glmm_eq(tanx, glmm_setzero());
-  glmm_128 add0 = glmm_add(tanx, glmm_and(cmp0, glmm_set1(1.0f)));
-  glmm_128 inv0 = glmm_div(glmm_set1(-1.0f), add0);
+  glmm_128 add0 = glmm_add(tanx, glmm_and(cmp0, glmm_set1_rval(1.0f)));
+  glmm_128 inv0 = glmm_div(glmm_set1_rval(-1.0f), add0);
   return glmm_select(inv0, tanx, tanMask);
 }
 
 static inline glmm_128 glmm_acos(glmm_128 v) {
   /* Follow glm_acos(float) and sanitize domain */
-  glmm_128 x = glmm_abs(glmm_clamp(v, glmm_set1(-1.0f), glmm_set1(1.0f)));
-  glmm_128 t = glmm_sqrt(glmm_sub(glmm_set1(1.0f), x));
+  glmm_128 x = glmm_abs(glmm_clamp(v, glmm_set1_rval(-1.0f), glmm_set1_rval(1.0f)));
+  glmm_128 t = glmm_sqrt(glmm_sub(glmm_set1_rval(1.0f), x));
   glmm_128 pos = glmm_mul(t, glmm_acos_poly(x));
-  glmm_128 neg = glmm_sub(glmm_set1(GLM_PIf), pos);
+  glmm_128 neg = glmm_sub(glmm_set1_rval(GLM_PIf), pos);
   return glmm_select(pos, neg, glmm_lt(v, glmm_setzero()));
 }
 
 static inline glmm_128 glmm_asin(glmm_128 v) {
-  return glmm_sub(glmm_set1(GLM_PI_2f), glmm_acos(v));
+  return glmm_sub(glmm_set1_rval(GLM_PI_2f), glmm_acos(v));
 }
 
 static inline glmm_128 glmm_atan(glmm_128 v) {
@@ -1070,19 +1073,20 @@ static inline glmm_128 glmm_atan(glmm_128 v) {
   glmm_128 abs = glmm_xor(v, sign_bit);
 
   /* Range reduction */
-  glmm_128 cmp0 = glmm_gt(abs, glmm_set1(2.414213562373095f));
-  glmm_128 cmp1 = glmm_gt(abs, glmm_set1(0.414213562373095f));
+  glmm_128 cmp0 = glmm_gt(abs, glmm_set1_rval(2.414213562373095f));
+  glmm_128 cmp1 = glmm_gt(abs, glmm_set1_rval(0.414213562373095f));
   glmm_128 cmp2 = glmm_andnot(cmp0, cmp1); /* low < v <= high */
 
   /* (-1.0 / v); avoid division-by-zero */
-  glmm_128 one = glmm_set1(1.0f);
-  glmm_128 denom = glmm_add(abs, glmm_and(glmm_eq(abs, glmm_setzero()), one));
+  glmm_128 one = glmm_set1_rval(1.0f);
+  glmm_128 is_zero = glmm_eq(abs, glmm_setzero());
+  glmm_128 denom = glmm_add(abs, glmm_and(is_zero, one));
   glmm_128 x0 = glmm_negate(glmm_div(one, denom));
-  glmm_128 y0 = glmm_and(cmp0, glmm_set1(GLM_PI_2f));
+  glmm_128 y0 = glmm_and(cmp0, glmm_set1_rval(GLM_PI_2f));
 
   /* (v - 1.0) / (v + 1.0) */
   glmm_128 x1 = glmm_div(glmm_sub(abs, one), glmm_add(abs, one));
-  glmm_128 y1 = glmm_and(cmp2, glmm_set1(GLM_PI_4f));
+  glmm_128 y1 = glmm_and(cmp2, glmm_set1_rval(GLM_PI_4f));
 
   /* Blend result */
   glmm_128 y2 = glmm_or(y0, y1);
@@ -1106,22 +1110,22 @@ static inline glmm_128 glmm_atan2(glmm_128 y, glmm_128 x) {
 
   /* if (x == 0 && y != 0) return +/- GLM_PI_2 */
   glmm_128 zero_mask = glmm_andnot(yeq0, xeq0);
-  glmm_128 zero_sign = glmm_xor(glmm_signbit(ylt0), glmm_set1(GLM_PI_2f));
+  glmm_128 zero_sign = glmm_xor(glmm_signbit(ylt0), glmm_set1_rval(GLM_PI_2f));
   glmm_128 zero_case = glmm_and(zero_sign, zero_mask);
 
   /* if (x < 0 && y == 0) return GLM_PI */
-  glmm_128 nero_case = glmm_and(glmm_and(xlt0, yeq0), glmm_set1(GLM_PIf));
+  glmm_128 nero_case = glmm_and(glmm_and(xlt0, yeq0), glmm_set1_rval(GLM_PIf));
 
   /* if (x < 0 && y < 0) sign swap */
   glmm_128 shift_mask = glmm_signbit(glmm_and(xlt0, ylt0));
-  glmm_128 shift = glmm_and(xlt0, glmm_xor(shift_mask, glmm_set1(GLM_PIf)));
+  glmm_128 shift = glmm_and(xlt0, glmm_xor(shift_mask, glmm_set1_rval(GLM_PIf)));
 
-  /* atan(y/x); avoiding division-by-zero  */
-  glmm_128 cmp0 = glmm_eq(glmm_or(xeq0, yeq0), glmm_setzero());
-  glmm_128 denom = glmm_add(x, glmm_and(xeq0, glmm_set1(1.0f)));
+  /* atan(y/x); avoiding division-by-zero */
+  glmm_128 is_zero = glmm_eq(glmm_or(xeq0, yeq0), glmm_setzero());
+  glmm_128 denom = glmm_add(x, glmm_and(xeq0, glmm_set1_rval(1.0f)));
   glmm_128 atan = glmm_atan(glmm_div(y, denom));
   atan = glmm_andnot(zero_mask, glmm_add(atan, shift));
-  atan = glmm_and(cmp0, atan); /* make zero-if-zero */
+  atan = glmm_and(is_zero, atan); /* make zero-if-zero */
 
   /* Blend result */
   result = glmm_andnot(degenerate, zero_case);
@@ -1137,12 +1141,12 @@ static inline glmm_128 glmm_atan2(glmm_128 y, glmm_128 x) {
 static inline glmm_128 glmm_exp(glmm_128 x) {
   glmm_128 n, exp;
   glmm_128i pow;
-  x = glmm_clamp(x, glmm_set1(-88.3762626647949f), glmm_set1(88.3762626647949f));
+  x = glmm_clamp(x, glmm_set1_rval(-88.3762626647949f), glmm_set1_rval(88.3762626647949f));
 
   /* exp(x) = exp(g + n*log(2)) */
-  n = glmm_floor(glmm_fmadd(x, glmm_set1(GLM_LOG2Ef), glmm_set1(0.5f)));
-  x = glmm_fmadd(n, glmm_set1(-0.693359375f), x);
-  x = glmm_fmadd(n, glmm_set1(2.12194440e-4f), x);
+  n = glmm_floor(glmm_fmadd(x, glmm_set1_rval(GLM_LOG2Ef), glmm_set1_rval(0.5f)));
+  x = glmm_fmadd(n, glmm_set1_rval(-0.693359375f), x);
+  x = glmm_fmadd(n, glmm_set1_rval(2.12194440e-4f), x);
   exp = glmm_exp_poly(x);
 
   /* multiply by 2^n */
@@ -1153,27 +1157,27 @@ static inline glmm_128 glmm_exp(glmm_128 x) {
 }
 
 static inline glmm_128 glmm_exp2(glmm_128 x) {
-  return glmm_exp(glmm_mul(glmm_set1(GLM_LN2f), x));
+  return glmm_exp(glmm_mul(glmm_set1_rval(GLM_LN2f), x));
 }
 
 static inline glmm_128 glmm_log(glmm_128 v) {
   glmm_128 shift, exp, log;
-  glmm_128 one = glmm_set1(1.0f);
+  glmm_128 one = glmm_set1_rval(1.0f);
   glmm_128 zero = glmm_setzero();
   glmm_128 ninf = glmm_setbits1(GLMM_MASK_NINF);
   glmm_128 pinf = glmm_setbits1(GLMM_MASK_PINF);
 
   /* Shift input */
   glmm_128 x = glmm_frexp(v, &exp);
-  shift = glmm_lt(x, glmm_set1(GLM_SQRT1_2f));
+  shift = glmm_lt(x, glmm_set1_rval(GLM_SQRT1_2f));
   exp = glmm_sub(exp, glmm_and(one, shift));
   x = glmm_add(glmm_sub(x, one), glmm_and(x, shift));
 
   /* Interpolate and add */
   log = glmm_log_poly(x);
-  log = glmm_fmadd(exp, glmm_set1(-2.12194440e-4f), log);
-  log = glmm_fmadd(glmm_mul(x, x), glmm_set1(-0.5f), log);
-  log = glmm_fmadd(exp, glmm_set1(0.693359375f), glmm_add(x, log));
+  log = glmm_fmadd(exp, glmm_set1_rval(-2.12194440e-4f), log);
+  log = glmm_fmadd(glmm_mul(x, x), glmm_set1_rval(-0.5f), log);
+  log = glmm_fmadd(exp, glmm_set1_rval(0.693359375f), glmm_add(x, log));
 
   /* Blend result */
   log = glmm_select(log, pinf, glmm_eq(v, pinf)); /* +Inf */
@@ -1183,30 +1187,30 @@ static inline glmm_128 glmm_log(glmm_128 v) {
 }
 
 static inline glmm_128 glmm_log2(glmm_128 x) {
-  return glmm_mul(glmm_set1(GLM_LOG2Ef), glmm_log(x));
+  return glmm_mul(glmm_set1_rval(GLM_LOG2Ef), glmm_log(x));
 }
 
 static inline glmm_128 glmm_sinh(glmm_128 v) {
-  glmm_128 half = glmm_set1(0.5f);
+  glmm_128 half = glmm_set1_rval(0.5f);
   return glmm_mul(half, glmm_sub(glmm_exp(v), glmm_exp(glmm_negate(v))));
 }
 
 static inline glmm_128 glmm_cosh(glmm_128 v) {
-  glmm_128 half = glmm_set1(0.5f);
+  glmm_128 half = glmm_set1_rval(0.5f);
   return glmm_mul(half, glmm_add(glmm_exp(v), glmm_exp(glmm_negate(v))));
 }
 
 static inline glmm_128 glmm_tanh(glmm_128 v) {
-  return glmm_tanh_poly(glmm_clamp(v, glmm_set1(-9.0f), glmm_set1(9.0f)));
+  return glmm_tanh_poly(glmm_clamp(v, glmm_set1_rval(-9.0f), glmm_set1_rval(9.0f)));
 }
 
 static inline glmm_128 glmm_asinh(glmm_128 v) {
-  glmm_128 sqrt0 = glmm_sqrt(glmm_add(glmm_mul(v, v), glmm_set1(1.0f)));
+  glmm_128 sqrt0 = glmm_sqrt(glmm_add(glmm_mul(v, v), glmm_set1_rval(1.0f)));
   return glmm_log(glmm_add(v, sqrt0));
 }
 
 static inline glmm_128 glmm_acosh(glmm_128 v) {
-  glmm_128 one = glmm_set1(1.0f);
+  glmm_128 one = glmm_set1_rval(1.0f);
   glmm_128 x = glmm_pmax(v, one);
   glmm_128 sqrt0 = glmm_sqrt(glmm_sub(x, one));
   glmm_128 sqrt1 = glmm_sqrt(glmm_add(x, one));
@@ -1214,11 +1218,11 @@ static inline glmm_128 glmm_acosh(glmm_128 v) {
 }
 
 static inline glmm_128 glmm_atanh(glmm_128 v) {
-  glmm_128 one = glmm_set1(1.0f);
-  glmm_128 half = glmm_set1(0.5f);
+  glmm_128 one = glmm_set1_rval(1.0f);
+  glmm_128 half = glmm_set1_rval(0.5f);
 
   /* Follow glm_atanh(float) and sanitize domain */
-  glmm_128 x = glmm_clamp(v, glmm_set1(-1.0f), one);
+  glmm_128 x = glmm_clamp(v, glmm_set1_rval(-1.0f), one);
 
   /* For |v| >= 1.0 return +/-inf */
   glmm_128 sgn0 = glmm_signbit(x);
@@ -1387,7 +1391,7 @@ CGLM_INLINE void glm_vec4_sdiv(float s, vec4 v, vec4 dest) {
 
 CGLM_INLINE void glm_vec4_rad(vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
-  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1(0.017453292519943295f)));
+  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1_rval(0.017453292519943295f)));
 #else
   dest[0] = glm_rad(v[0]);
   dest[1] = glm_rad(v[1]);
@@ -1398,7 +1402,7 @@ CGLM_INLINE void glm_vec4_rad(vec4 v, vec4 dest) {
 
 CGLM_INLINE void glm_vec4_deg(vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
-  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1(57.29577951308232f)));
+  glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1_rval(57.29577951308232f)));
 #else
   dest[0] = glm_deg(v[0]);
   dest[1] = glm_deg(v[1]);
@@ -1639,14 +1643,11 @@ CGLM_INLINE void glm_vec4_invsqrt(vec4 v, vec4 dest) {
 
 /* 8.3. Common Functions */
 
-CGLM_INLINE void glm_vec4_floor(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_floor_simd(vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_floor(glmm_load(v)));
 #else
-  dest[0] = floorf(v[0]);
-  dest[1] = floorf(v[1]);
-  dest[2] = floorf(v[2]);
-  dest[3] = floorf(v[3]);
+  glm_vec4_floor(v, dest);
 #endif
 }
 
@@ -1692,7 +1693,7 @@ CGLM_INLINE void glm_vec4_fract_simd(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_mod(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_mod_simd(vec4 a, vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_128 x = glmm_load(a);
   glmm_128 y = glmm_load(b);
@@ -1706,10 +1707,10 @@ CGLM_INLINE void glm_vec4_mod(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_mods(vec4 a, float s, vec4 dest) {
+CGLM_INLINE void glm_vec4_mods_simd(vec4 a, float s, vec4 dest) {
   CGLM_ALIGN(16) vec4 b;
   glm_vec4_broadcast(s, b);
-  glm_vec4_mod(a, b, dest);
+  glm_vec4_mod_simd(a, b, dest);
 }
 
 CGLM_INLINE void glm_vec4_modf(vec4 v, vec4 integral, vec4 dest) {
@@ -1763,9 +1764,9 @@ CGLM_INLINE void glm_vec4_smoothstep_simd(vec4 edge0, vec4 edge1, vec4 x, vec4 d
   glmm_128 e1 = glmm_load(edge1);
   glmm_128 x0 = glmm_load(x);
   glmm_128 div0 = glmm_div(glmm_sub(x0, e0), glmm_sub(e1, e0));
-  glmm_128 t = glmm_clamp(div0, glmm_set1(0.0f), glmm_set1(1.0f));
-  glmm_128 mul0 = glmm_mul(glmm_set1(2.0f), t);
-  glmm_128 sub0 = glmm_sub(glmm_set1(3.0f), mul0);
+  glmm_128 t = glmm_clamp(div0, glmm_set1_rval(0.0f), glmm_set1_rval(1.0f));
+  glmm_128 mul0 = glmm_mul(glmm_set1_rval(2.0f), t);
+  glmm_128 sub0 = glmm_sub(glmm_set1_rval(3.0f), mul0);
   glmm_store(dest, glmm_mul(glmm_mul(t, t), sub0));
 #else
   glm_vec4_smoothstep(edge0, edge1, x, dest);
@@ -1831,7 +1832,7 @@ CGLM_INLINE void glm_vec4_faceforward(vec4 n, vec4 i, vec4 nref, vec4 dest) {
   glmm_128 v = glmm_load(n);
   glmm_128 dot0 = glmm_vdot(glmm_load(nref), glmm_load(i));
   glmm_128 sgn0 = glmm_sign(dot0);
-  glmm_store(dest, glmm_mul(v, glmm_mul(sgn0, glmm_set1(-1.0f))));
+  glmm_store(dest, glmm_mul(v, glmm_mul(sgn0, glmm_set1_rval(-1.0f))));
 #else
   float dot = glm_vec4_dot(nref, i);
   dest[0] = dot < 0.f ? n[0] : -n[0];
@@ -1846,7 +1847,7 @@ CGLM_INLINE void glm_vec4_reflect_simd(vec4 i, vec4 n, vec4 dest) {
   glmm_128 x = glmm_load(i);
   glmm_128 y = glmm_load(n);
   glmm_128 mul0 = glmm_mul(glmm_vdot(y, x), y);
-  glmm_store(dest, glmm_fnmadd(glmm_set1(2.0f), mul0, x));
+  glmm_store(dest, glmm_fnmadd(glmm_set1_rval(2.0f), mul0, x));
 #else
   glm_vec4_reflect(i, n, dest);
 #endif
@@ -1857,7 +1858,7 @@ CGLM_INLINE void glm_vec4_refract_simd(vec4 i, vec4 n, float eta, vec4 dest) {
   glmm_128 x = glmm_load(i);
   glmm_128 y = glmm_load(n);
   glmm_128 e = glmm_set1(eta);
-  glmm_128 one = glmm_set1(1.0f);
+  glmm_128 one = glmm_set1_rval(1.0f);
   glmm_128 zero = glmm_setzero();
   glmm_128 dot0 = glmm_vdot(y, x);
   glmm_128 sub0 = glmm_fnmadd(dot0, dot0, one);
@@ -2042,7 +2043,7 @@ CGLM_INLINE void glm_quat_mat4_simd(versor v, mat4 dest) {
   __m128 q2_yzxw = glmm_shuff1(q2, 3, 0, 2, 1);
   __m128 q2_zxyw = glmm_shuff1(q2, 3, 1, 0, 2);
 
-  __m128 sub0 = glmm_fnmadd(q_yzxw, q2_yzxw, glmm_set1(1.0f));
+  __m128 sub0 = glmm_fnmadd(q_yzxw, q2_yzxw, glmm_set1_rval(1.0f));
   __m128 tmp0 = glmm_fnmadd(q_zxyw, q2_zxyw, sub0);
   __m128 tmp1 = glmm_fmadd(q2, q_zxyw, _mm_mul_ps(q2_yzxw, q_wwww));
   __m128 tmp2 = glmm_fnmadd(q2_zxyw, q_wwww, _mm_mul_ps(q2, q_yzxw));
@@ -2111,7 +2112,7 @@ CGLM_INLINE void glm_quat_rotatev_simd(versor a, vec3 b, vec3 dest) {
   glmm_128 cr0 = glmm_cross3(q, v);
   glmm_128 cr1 = glmm_cross3(q, cr0);
   glmm_128 fm0 = glmm_fmadd(cr0, glmm_splat_w(q), cr1);
-  glmm_128 fm1 = glmm_fmadd(fm0, glmm_set1(2.0f), v);
+  glmm_128 fm1 = glmm_fmadd(fm0, glmm_set1_rval(2.0f), v);
   glmm_store3(dest, fm1);
 #else
   glm_quat_rotatev(a, b, dest);
