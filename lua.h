@@ -18,14 +18,14 @@
 
 #define LUA_VERSION_MAJOR	"5"
 #define LUA_VERSION_MINOR	"4"
-#define LUA_VERSION_RELEASE	"7"
+#define LUA_VERSION_RELEASE	"8"
 
 #define LUA_VERSION_NUM			504
-#define LUA_VERSION_RELEASE_NUM		(LUA_VERSION_NUM * 100 + 7)
+#define LUA_VERSION_RELEASE_NUM		(LUA_VERSION_NUM * 100 + 8)
 
 #define LUA_VERSION	"Lua " LUA_VERSION_MAJOR "." LUA_VERSION_MINOR
 #define LUA_RELEASE	LUA_VERSION "." LUA_VERSION_RELEASE
-#define LUA_COPYRIGHT	LUA_RELEASE "  Copyright (C) 1994-2024 Lua.org, PUC-Rio"
+#define LUA_COPYRIGHT	LUA_RELEASE "  Copyright (C) 1994-2025 Lua.org, PUC-Rio"
 #define LUA_AUTHORS	"R. Ierusalimschy, L. H. de Figueiredo, W. Celes"
 
 
@@ -614,9 +614,9 @@ LUA_API void (lua_fromhalf4) (const lua_hvec4 v, lua_vec4 dest);
 
 /******************************************************************************
 * LuaGLM
-* Copyright (C) 2024 - gottfriedleibniz
+* Copyright (C) 2025 - gottfriedleibniz
 \******************************************************************************
-* Copyright (C) 1994-2024 Lua.org, PUC-Rio.
+* Copyright (C) 1994-2025 Lua.org, PUC-Rio.
 *
 * Permission is hereby granted, free of charge, to any person obtaining
 * a copy of this software and associated documentation files (the
