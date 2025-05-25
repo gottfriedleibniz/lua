@@ -848,18 +848,6 @@ LUA_API int lua_tovector(lua_State *L, int idx, float *v) {
   return 0;
 }
 
-#if !defined(LUAGLM_HALF_TYPE)
-LUA_API const float *lua_torawvector(lua_State *L, int idx, int *length) {
-  const TValue *o = glm_index2value(L, idx);
-  if (ttisvector(o)) {
-    if (length != NULL)
-      *length = ttvlen(o);
-    return &(vvalue(o).v4[0]);
-  }
-  return NULL;
-}
-#endif
-
 LUA_API int lua_tovec2(lua_State *L, int idx, lua_vec2 v2) {
   TValue *o = (TValue *)glm_index2value(L, idx);
   if (ttisvector(o) && ttvlen(o) >= 2) {

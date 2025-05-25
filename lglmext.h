@@ -100,6 +100,24 @@ typedef float16 hvec4[4];
 #endif
 
 /*!
+ * @brief float to u32 bitcast.
+ * @TODO: compliance++
+ */
+static inline uint32_t glmm_bitcast_fu32(float f) {
+  union { float f; uint32_t u; } var = { f };
+  return var.u;
+}
+
+/*!
+ * @brief u32 to float bitcast.
+ * @TODO: compliance++
+ */
+static inline float glmm_bitcast_u32f(uint32_t u) {
+  union { uint32_t u; float f; } var = { u };
+  return var.f;
+}
+
+/*!
  * @brief convert float to half float
  */
 CGLM_INLINE float16 glm_to_half(float v) {
@@ -113,15 +131,10 @@ CGLM_INLINE float16 glm_to_half(float v) {
 #elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
   return vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(glmm_set1(v))), 0);
 #else
-  uint32_t a, sign, half;
-  union {
-    float f;
-    uint32_t bits;
-  } conv;
-
-  conv.f = v;
-  sign = (conv.bits & 0x80000000U) >> 16U;
-  a = conv.bits & 0x7FFFFFFFU;
+  uint32_t half;
+  uint32_t bits = glmm_bitcast_fu32(v);
+  uint32_t sign = (bits & 0x80000000U) >> 16U;
+  uint32_t a = bits & 0x7FFFFFFFU;
   if (a >= 0x47800000) /* Exponent overflow/NaN -> Signed Inf/NaN */
     half = 0x7C00U | ((a > 0x7F800000) ? (0x200 | ((a >> 13U) & 0x3FFU)) : 0U);
   else if (a <= 0x33000000U) /* Exponent underflow -> Signed zero */
@@ -153,15 +166,10 @@ CGLM_INLINE float glm_from_half(float16 v) {
 #elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
   return vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(vdup_n_u16(v))), 0);
 #else
-  uint32_t a, sign, exponent, mantissa;
-  union {
-    float f;
-    uint32_t bits;
-  } conv;
-
-  sign = ((uint32_t)v & 0x8000u) << 16;
-  exponent = (uint32_t)(v & 0x7C00u);
-  mantissa = (uint32_t)(v & 0x03FFu);
+  uint32_t a;
+  uint32_t sign = ((uint32_t)v & 0x8000u) << 16;
+  uint32_t exponent = (uint32_t)(v & 0x7C00u);
+  uint32_t mantissa = (uint32_t)(v & 0x03FFu);
   if (exponent == 0x7C00u) /* Signed Inf/NaN */
     a = 0x7F800000u | (mantissa << 13);
   else if (exponent != 0x0000u) /* Normalized */
@@ -176,8 +184,7 @@ CGLM_INLINE float glm_from_half(float16 v) {
     }
     a = ((0x70 - exponent) << 23) | ((mantissa & 0x03FFu) << 13);
   }
-  conv.bits = sign | a;
-  return conv.f;
+  return glmm_bitcast_u32f(sign | a);
 #endif
 }
 
@@ -283,7 +290,6 @@ GLMM_DECLARE_MASK(GLMM_MASK_ALL, GLM_MASK_ALL)
 #define glmm_add _mm_add_ps
 #define glmm_sub _mm_sub_ps
 #define glmm_mul _mm_mul_ps
-#define glmm_div _mm_div_ps
 #define glmm_sqrt _mm_sqrt_ps
 #define glmm_eq _mm_cmpeq_ps
 #define glmm_neq _mm_cmpneq_ps
@@ -517,11 +523,6 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define GLMM_MASK_PINF GLM_MASK_PINF
 #define GLMM_MASK_NINF GLM_MASK_NINF
 #define GLMM_MASK_ALL  GLM_MASK_ALL
-
-/* Temporary: missing from arm.h */
-#if !defined(glmm_set1_rval)
-  #define glmm_set1_rval glmm_set1
-#endif
 
 #define glmm_setbits1(x) vreinterpretq_f32_u32(vdupq_n_u32(x))
 #define glmm_maskop(x) vreinterpretq_f32_u32(x)
@@ -764,7 +765,6 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
 #define glmm_add wasm_f32x4_add
 #define glmm_sub wasm_f32x4_sub
 #define glmm_mul wasm_f32x4_mul
-#define glmm_div wasm_f32x4_div
 #define glmm_sqrt wasm_f32x4_sqrt
 #define glmm_ceil wasm_f32x4_ceil
 #define glmm_floor wasm_f32x4_floor
@@ -1121,7 +1121,7 @@ static inline glmm_128 glmm_atan2(glmm_128 y, glmm_128 x) {
   glmm_128 shift = glmm_and(xlt0, glmm_xor(shift_mask, glmm_set1_rval(GLM_PIf)));
 
   /* atan(y/x); avoiding division-by-zero */
-  glmm_128 is_zero = glmm_eq(glmm_or(xeq0, yeq0), glmm_setzero());
+  glmm_128 is_zero = glmm_eq(glmm_or(xeq0, yeq0), zero);
   glmm_128 denom = glmm_add(x, glmm_and(xeq0, glmm_set1_rval(1.0f)));
   glmm_128 atan = glmm_atan(glmm_div(y, denom));
   atan = glmm_andnot(zero_mask, glmm_add(atan, shift));
@@ -3078,152 +3078,81 @@ CGLM_INLINE int glm_mat4_str(char *buff, size_t size, mat4 m) {
 /*
 ** {==================================================================
 ** hash.{h,inl}
+**
+** @TODO: Replace w/ spatial hashing
 ** ===================================================================
 */
 
 /*!
- * @brief calculates the hash of the argument
+ * @brief quick-and-dirty float hash
  */
-
-CGLM_INLINE size_t glm_hashf16(float16 n) {
-  return (size_t)n;
+static inline size_t glmm_hashf(float n) {
+  uint32_t bits = glmm_bitcast_fu32(n == 0.0f ? 0.0f : n); /* -0.0 to 0.0 */
+  return (size_t)(bits ^ (bits >> 17));
 }
 
-CGLM_INLINE size_t glm_hashf(float n) {
-  union {
-    float t;
-    uint32_t a;
-  } u;
-  u.a = 0;
-  u.t = n;
-  return (n == 0.f) ? 0 : (size_t)u.a;
-}
-
-CGLM_INLINE size_t glm_hash(double n) {
-#if ((SIZE_MAX >> 31) >> 31) == 3
-  union {
-    double t;
-    size_t a;
-  } u;
-  u.a = 0;
-  u.t = n;
-  return (n == 0.0) ? 0 : u.a;
-#elif (SIZE_MAX >> 30) == 3
-  union {
-    double t;
-    struct {
-      size_t a;
-      size_t b;
-    } s;
-  } u;
-  u.s.a = 0;
-  u.s.b = 0;
-  u.t = n;
-  return (n == 0.0) ? 0 : (u.s.a ^ u.s.b);
-#else
-  #error "Unsupported Architecture"
-#endif
-}
-
-#if defined(LDBL_DIG) || defined(__LDBL_DIG__)
-CGLM_INLINE size_t glm_hashl(long double n) {
-#if ((SIZE_MAX >> 31) >> 31) == 3
-  union {
-    long double t;
-    struct {
-      size_t a;
-      size_t b;
-    } s;
-  } u;
-  u.s.a = 0;
-  u.s.b = 0;
-  u.t = n;
-  return (n == 0.0L) ? 0 : (u.s.a ^ u.s.b);
-#elif (SIZE_MAX >> 30) == 3
-  union {
-    long double t;
-    struct {
-      size_t a;
-      size_t b;
-      size_t c;
-      size_t d;
-    } s;
-  } u;
-  u.s.a = 0;
-  u.s.b = 0;
-  u.s.c = 0;
-  u.s.d = 0;
-  u.t = n;
-  return (n == 0.0L) ? 0 : (u.s.a ^ u.s.b ^ u.s.c ^ u.s.d);
-#else
-  #error "Unsupported Architecture"
-#endif
-}
-#endif
-
-CGLM_INLINE size_t glm_hashstep(size_t seed, size_t value) {
+/*!
+ * @brief glm::detail::hash_combine
+ */
+static inline size_t glmm_hash_combine(size_t seed, size_t value) {
   seed ^= value + 0x9E3779B9 + (seed << 6) + (seed >> 2);
   return seed;
 }
 
-/*!
- * @brief calculates the hash of the argument
- */
-
 CGLM_INLINE size_t glm_vec2_hash(vec2 v) {
   size_t Hash = 0x9DA040E3; /* joaat("vec2") */
-  Hash = glm_hashstep(Hash, glm_hashf(v[0]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[1]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
   return Hash;
 }
 
 CGLM_INLINE size_t glm_vec3_hash(vec3 v) {
   size_t Hash = 0xAF3DE41E;
-  Hash = glm_hashstep(Hash, glm_hashf(v[0]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[1]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[2]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[2]));
   return Hash;
 }
 
 CGLM_INLINE size_t glm_vec4_hash(vec4 v) {
   size_t Hash = 0x9B2DBBFE;
-  Hash = glm_hashstep(Hash, glm_hashf(v[0]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[1]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[2]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[3]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[2]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[3]));
   return Hash;
 }
 
 CGLM_INLINE size_t glm_quat_hash(versor v) {
   size_t Hash = 0xA3675366; /* joaat("quat") */
-  Hash = glm_hashstep(Hash, glm_hashf(v[3]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[0]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[1]));
-  Hash = glm_hashstep(Hash, glm_hashf(v[2]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[3]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
+  Hash = glmm_hash_combine(Hash, glmm_hashf(v[2]));
   return Hash;
 }
 
 CGLM_INLINE size_t glm_mat2_hash(mat2 m) {
   size_t Hash = 0x7ABED661; /* joaat("mat2") */
-  Hash = glm_hashstep(Hash, glm_vec2_hash(m[0]));
-  Hash = glm_hashstep(Hash, glm_vec2_hash(m[1]));
+  Hash = glmm_hash_combine(Hash, glm_vec2_hash(m[0]));
+  Hash = glmm_hash_combine(Hash, glm_vec2_hash(m[1]));
   return Hash;
 }
 
 CGLM_INLINE size_t glm_mat3_hash(mat3 m) {
   size_t Hash = 0x898473EC;
-  Hash = glm_hashstep(Hash, glm_vec3_hash(m[0]));
-  Hash = glm_hashstep(Hash, glm_vec3_hash(m[1]));
-  Hash = glm_hashstep(Hash, glm_vec3_hash(m[2]));
+  Hash = glmm_hash_combine(Hash, glm_vec3_hash(m[0]));
+  Hash = glmm_hash_combine(Hash, glm_vec3_hash(m[1]));
+  Hash = glmm_hash_combine(Hash, glm_vec3_hash(m[2]));
   return Hash;
 }
 
 CGLM_INLINE size_t glm_mat4_hash(mat4 m) {
   size_t Hash = 0xA644AD6C;
-  Hash = glm_hashstep(Hash, glm_vec4_hash(m[0]));
-  Hash = glm_hashstep(Hash, glm_vec4_hash(m[1]));
-  Hash = glm_hashstep(Hash, glm_vec4_hash(m[2]));
-  Hash = glm_hashstep(Hash, glm_vec4_hash(m[3]));
+  Hash = glmm_hash_combine(Hash, glm_vec4_hash(m[0]));
+  Hash = glmm_hash_combine(Hash, glm_vec4_hash(m[1]));
+  Hash = glmm_hash_combine(Hash, glm_vec4_hash(m[2]));
+  Hash = glmm_hash_combine(Hash, glm_vec4_hash(m[3]));
   return Hash;
 }
 

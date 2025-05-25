@@ -578,9 +578,6 @@ LUA_API void (lua_pushmat4) (lua_State *L, const lua_mat4 m4);
 
 LUA_API int  (lua_tovector) (lua_State *L, int idx, float *v);
 LUA_API void (lua_pushvector) (lua_State *L, const float *v, int length);
-#if !defined(LUAGLM_HALF_TYPE)
-LUA_API const float *(lua_torawvector) (lua_State *L, int idx, int *length);
-#endif
 
 /* Encodings */
 
