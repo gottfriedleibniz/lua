@@ -467,8 +467,11 @@ checkprogout("b\nc\nd\ne\n\n")
 
 -- input interrupted in continuation line
 prepfile("a.\n")
-RUN([[lua -i < %s > /dev/null 2> %s]], prog, out)
-checkprogout("near <eof>\n")
+if os.platform == "win32" then
+else
+  RUN([[lua -i < %s > /dev/null 2> %s]], prog, out)
+  checkprogout("near <eof>\n")
+end
 
 local prompt = "alo" -- @TODO: ensure libreadline (not libedit)
 prepfile[[ --

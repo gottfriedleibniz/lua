@@ -253,7 +253,7 @@ emscripten: SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_DLOPEN
 emscripten: SYSLIBS= -Wl,-E
 emscripten: $(ALL_T)
 
-# WASI(X)
+# WASI
 wasi: CC= $(WASI_SDK)/bin/clang --sysroot=$(WASI_SYSROOT) --target=$(WASI_TARGET)
 wasi: AR= $(WASI_SDK)/bin/ar
 wasi: RANLIB= $(WASI_SDK)/bin/ranlib
@@ -261,25 +261,10 @@ wasi: STRIP= $(WASI_SDK)/bin/strip
 wasi: UNAME= wasm
 wasi: LUA_T= lua.wasm
 wasi: LUAC_T= luac.wasm
-wasi: SYSCFLAGS= -matomics -mbulk-memory -mmutable-globals -pthread -mthread-model posix -ftls-model=local-exec -fno-trapping-math
+wasi: SYSCFLAGS= -matomics -mbulk-memory -mmutable-globals -pthread -mthread-model posix -mllvm -wasm-enable-sjlj -ftls-model=local-exec -fno-trapping-math
 wasi: SYSCFLAGS+= -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS
-wasi: SYSLIBS= -lwasi-emulated-process-clocks
-wasi: SYSLIBS+= -Wl,--shared-memory -Wl,--max-memory=4294967296
-wasi: SYSLIBS+= -Wl,--import-memory
-wasi: SYSLIBS+= -Wl,--export-dynamic
-wasi: SYSLIBS+= -Wl,--export=__heap_base
-wasi: SYSLIBS+= -Wl,--export=__stack_pointer
-wasi: SYSLIBS+= -Wl,--export=__data_end
-wasi: SYSLIBS+= -Wl,--export=__wasm_init_tls
-wasi: SYSLIBS+= -Wl,--export=__wasm_signal
-wasi: SYSLIBS+= -Wl,--export=__tls_size
-wasi: SYSLIBS+= -Wl,--export=__tls_align
-wasi: SYSLIBS+= -Wl,--export=__tls_base
+wasi: SYSLIBS= -lwasi-emulated-process-clocks -lwasi-emulated-signal -lsetjmp
 wasi: $(ALL_T)
-	$(WASM_OPT) -O2 --asyncify --enable-bulk-memory --enable-threads --enable-simd $(LUA_T) -o $(LUA_T)
-ifdef LUAC_T
-	$(WASM_OPT) -O2 --asyncify --enable-bulk-memory --enable-threads --enable-simd $(LUAC_T) -o $(LUAC_T)
-endif
 
 # == DO NOT DELETE ===========================================================
 lapi.o: lapi.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \

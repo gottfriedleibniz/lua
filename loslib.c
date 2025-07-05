@@ -101,8 +101,7 @@
 */
 #if !defined(lua_tmpnam)	/* { */
 
-/* @LuaExt: tmpnam is not defined on WASI */
-#if defined(LUA_USE_POSIX) || defined(__wasi__)	/* { */
+#if defined(LUA_USE_POSIX)	/* { */
 
 #include <unistd.h>
 
@@ -117,6 +116,12 @@
         e = mkstemp(b); \
         if (e != -1) close(e); \
         e = (e == -1); }
+
+#elif defined(__wasi__)		/* }{ */
+
+/* @LuaExt: tmpnam is not defined on WASI */
+#define LUA_TMPNAMBUFSIZE	20
+#define lua_tmpnam(b,e)		{ e = -1; }
 
 #else				/* }{ */
 
@@ -242,7 +247,7 @@ static int os_rdtsc(lua_State *L) {
 /* }================================================================== */
 
 #if !defined(l_system)
-#if defined(LUA_USE_IOS)
+#if defined(LUA_USE_IOS) || defined(__wasi__)
 /* Despite claiming to be ISO C, iOS does not implement 'system'. */
 #define l_system(cmd) ((cmd) == NULL ? 0 : -1)
 #else
