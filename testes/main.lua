@@ -99,7 +99,7 @@ prepfile[[
 1, a
 )
 ]]
-RUN('lua - < %s > %s', prog, out)
+RUN('lua - -- < %s > %s', prog, out)
 checkout("1\tnil\n")
 
 if os.platform == "win32" then
@@ -151,9 +151,9 @@ prepfile("print(package.path)")
 
 -- test LUA_PATH
 if os.platform == "win32" then
-  RUN('set LUA_INIT=&& set LUA_PATH=x&& lua %s > %s', prog, out)
+  RUN('set LUA_INIT=&& set LUA_PATH=x&& lua --  %s > %s', prog, out)
 else
-  RUN('env LUA_INIT= LUA_PATH=x lua %s > %s', prog, out)
+  RUN('env LUA_INIT= LUA_PATH=x lua --  %s > %s', prog, out)
 end
 checkout("x\n")
 
@@ -459,9 +459,9 @@ checkprogout("6\n10\n10\n\n")
 
 prepfile("a = [[b\nc\nd\ne]]\n=a")
 if os.platform == "win32" then
-  RUN([[lua -e_PROMPT='' -e_PROMPT2='' -i < %s > %s]], prog, out)
+  RUN([[lua -e_PROMPT='' -e_PROMPT2='' -i --  < %s > %s]], prog, out)
 else
-  RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
+  RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i --  < %s > %s]], prog, out)
 end
 checkprogout("b\nc\nd\ne\n\n")
 
@@ -615,12 +615,14 @@ assert(not os.remove(out))
 -- invalid options
 NoRun("unrecognized option '-h'", "lua -h")
 NoRun("unrecognized option '---'", "lua ---")
-NoRun("unrecognized option '-Ex'", "lua -Ex")
+NoRun("unrecognized option '-Ex'", "lua -Ex --")
 NoRun("unrecognized option '-vv'", "lua -vv")
 NoRun("unrecognized option '-iv'", "lua -iv")
 NoRun("'-e' needs argument", "lua -e")
 NoRun("syntax error", "lua -e a")
 NoRun("'-l' needs argument", "lua -l")
+NoRun("-i", "lua -- -i")   -- handles -i as a script name
+
 
 
 if T then   -- test library?
