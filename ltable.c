@@ -1082,10 +1082,17 @@ void luaH_compact (lua_State *L, Table *t) {
 }
 
 void luaH_clone (lua_State *L, const Table *from, Table *to) {
-  const unsigned int from_realasize = luaH_realasize(from);
-  const unsigned int to_realasize = luaH_realasize(to);
+  Table newt;
+  unsigned int from_realasize;
+  unsigned int to_realasize;
+  if (from == to)
+    return;
 
-  Table newt;  /* to keep the new hash part */
+  /* calculate array sizes */
+  from_realasize = luaH_realasize(from);
+  to_realasize = luaH_realasize(to);
+
+  /* to keep the new hash part */
   newt.alimit = 0;
   newt.array = NULL;
   setnodevector(L, &newt, 0);  /* ensure no elements to hash part */

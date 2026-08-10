@@ -858,31 +858,6 @@
 #endif
 
 /*
-@@ LUA_ALIGNED memory alignment for structs, classes, etc
-*/
-#if defined(_MSC_VER) && _MSC_VER >= 1300
-  #define LUA_ALIGNED(x) __declspec(align(x))
-#elif LUA_HAS_ATTRIBUTE(__aligned__)
-  #define LUA_ALIGNED(x) __attribute__((__aligned__(x)))
-#else
-  #define LUA_ALIGNED(x) /* no alignment */
-#endif
-
-/*
-@@ LUA_ASSUME_ALIGNED assume a pointers alignment
-*/
-#if LUA_HAS_BUILTIN(__builtin_assume_aligned) || LUA_GNUC_PREREQ(4, 7)
-  #define LUA_ASSUME_ALIGNED(x, a) __builtin_assume_aligned((x), (a))
-#else
-  #define LUA_ASSUME_ALIGNED(x, a) (x)
-#endif
-
-/*
-@@ LUA_CAST_ALIGNED cast to a pointer with assumed alignment
-*/
-#define LUA_ALIGNED_CAST(t, x, a) ((t)LUA_ASSUME_ALIGNED(x, a))
-
-/*
 @@ LUA_MINSIZE optimize function for size
 */
 #if LUA_HAS_ATTRIBUTE(minsize)
@@ -902,15 +877,6 @@
   #define LUA_NORETURN __attribute__((__noreturn__))
 #else
   #define LUA_NORETURN
-#endif
-
-/*
-@@ LUA_MUSTTAIL indicate that the compiler must generate a tail call
-*/
-#if LUA_HAS_ATTRIBUTE(musttail)
-  #define LUA_MUSTTAIL __attribute__((musttail))
-#else
-  #define LUA_MUSTTAIL /* TAILCALL */
 #endif
 
 /*

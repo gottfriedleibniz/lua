@@ -997,7 +997,7 @@ LUA_API void lua_clonetable (lua_State *L, int fromidx, int toidx) {
   lua_lock(L);
   from = gettable(L, fromidx);
   to = gettable(L, toidx);
-  if (from != NULL && to != NULL) {
+  if (from != NULL && to != NULL && from != to) {
     readonly_api_check(L, to);
     luaH_clone(L, from, to);
     luaC_checkGC(L);

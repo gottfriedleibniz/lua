@@ -691,10 +691,10 @@ static inline float32x4_t glmm_pmin(float32x4_t a, float32x4_t b) {
 }
 
 static inline float32x4_t glmm_clamp(float32x4_t v, float32x4_t minVal, float32x4_t maxVal) {
-#if CGLM_ARM64
+#if CGLM_ARM64 && defined(__ARM_FEATURE_NUMERIC_MAXMIN)
   return vminnmq_f32(vmaxnmq_f32(v, minVal), maxVal);
 #else
-  return vminq_f32(vmaxq_f32(v, minVal), maxVal);
+  return glmm_pmin(glmm_pmax(v, minVal), maxVal);
 #endif
 }
 
