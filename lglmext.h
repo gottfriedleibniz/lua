@@ -462,6 +462,18 @@ static inline __m128 glmm_clamp(__m128 v, __m128 minVal, __m128 maxVal) {
   return _mm_min_ps(_mm_max_ps(v, minVal), maxVal);
 }
 
+#if !defined(__SSE4_1__)
+/*
+ * Preserve the sign of zero in the result by restoring the inputs sign bit
+ * whenever the result is zero.
+ */
+static inline __m128 glmm_zpreserve(__m128 v, __m128 result) {
+  __m128 sgn0 = glmm_setbits1(GLMM_MASK_SIGN);
+  __m128 zer0 = _mm_cmpeq_ps(result, glmm_setzero());
+  return _mm_or_ps(result, _mm_and_ps(_mm_and_ps(v, sgn0), zer0));
+}
+#endif
+
 static inline __m128 glmm_round(__m128 v) {
 #if defined(__SSE4_1__)
   return _mm_round_ps(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
@@ -471,7 +483,7 @@ static inline __m128 glmm_round(__m128 v) {
   __m128 or0 = _mm_or_ps(_mm_and_ps(sgn0, v), limit); /* +/- limit */
   __m128 sub0 = _mm_sub_ps(_mm_add_ps(v, or0), or0);
   __m128 cmp0 = _mm_cmplt_ps(glmm_abs(v), limit);
-  return glmm_select(v, sub0, cmp0);
+  return glmm_zpreserve(v, glmm_select(v, sub0, cmp0));
 #endif
 }
 
@@ -482,7 +494,7 @@ static inline __m128 glmm_floor(__m128 v) {
   __m128 rnd0 = glmm_round(v);
   __m128 cmp0 = _mm_cmplt_ps(v, rnd0);
   __m128 and0 = _mm_and_ps(cmp0, glmm_set1_rval(1.0f));
-  return _mm_sub_ps(rnd0, and0);
+  return glmm_zpreserve(v, _mm_sub_ps(rnd0, and0));
 #endif
 }
 
@@ -493,7 +505,7 @@ static inline __m128 glmm_trunc(__m128 v) {
   __m128 limit = glmm_setbits1(GLMM_MASK_LIMT);
   __m128 cvt0 = glmm_cvti(v);
   __m128 cmp0 = _mm_cmplt_ps(glmm_abs(v), limit);
-  return glmm_select(v, cvt0, cmp0);
+  return glmm_zpreserve(v, glmm_select(v, cvt0, cmp0));
 #endif
 }
 
@@ -504,7 +516,7 @@ static inline __m128 glmm_ceil(__m128 v) {
   __m128 rnd0 = glmm_round(v);
   __m128 cmp0 = _mm_cmpgt_ps(v, rnd0);
   __m128 and0 = _mm_and_ps(cmp0, glmm_set1_rval(1.0f));
-  return _mm_add_ps(rnd0, and0);
+  return glmm_zpreserve(v, _mm_add_ps(rnd0, and0));
 #endif
 }
 
@@ -698,17 +710,26 @@ static inline float32x4_t glmm_clamp(float32x4_t v, float32x4_t minVal, float32x
 #endif
 }
 
+#if !CGLM_ARM64
+static inline float32x4_t glmm_zpreserve(float32x4_t v, float32x4_t result) {
+  uint32x4_t sgn0 = vdupq_n_u32(GLMM_MASK_SIGN);
+  uint32x4_t zer0 = vceqq_f32(result, glmm_setzero());
+  uint32x4_t and0 = vandq_u32(vandq_u32(vreinterpretq_u32_f32(v), sgn0), zer0);
+  return vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(result), and0));
+}
+#endif
+
 static inline float32x4_t glmm_round(float32x4_t v) {
 #if CGLM_ARM64
   return vrndnq_f32(v);
 #else
-  uint32x4_t sign = vdupq_n_u32(GLMM_MASK_SIGN);
   uint32x4_t limit = vdupq_n_u32(GLMM_MASK_LIMT);
-  uint32x4_t or0 = vorrq_u32(vandq_u32(sign, vreinterpretq_u32_f32(v)), limit);
+  uint32x4_t sgn0 = vdupq_n_u32(GLMM_MASK_SIGN);
+  uint32x4_t or0 = vorrq_u32(vandq_u32(sgn0, vreinterpretq_u32_f32(v)), limit); /* +/- limit */
   uint32x4_t cmp0 = vcaltq_f32(v, vreinterpretq_f32_u32(limit));
   float32x4_t add0 = vaddq_f32(v, vreinterpretq_f32_u32(or0));
   float32x4_t sub0 = vsubq_f32(add0, vreinterpretq_f32_u32(or0));
-  return vbslq_f32(cmp0, sub0, v);
+  return glmm_zpreserve(v, vbslq_f32(cmp0, sub0, v));
 #endif
 }
 
@@ -719,7 +740,7 @@ static inline float32x4_t glmm_floor(float32x4_t v) {
   float32x4_t rnd0 = glmm_round(v);
   uint32x4_t cmp0 = vcltq_f32(v, rnd0);
   uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1_rval(1.0f)));
-  return vsubq_f32(rnd0, vreinterpretq_f32_u32(and0));
+  return glmm_zpreserve(v, vsubq_f32(rnd0, vreinterpretq_f32_u32(and0)));
 #endif
 }
 
@@ -730,7 +751,7 @@ static inline float32x4_t glmm_trunc(float32x4_t v) {
   uint32x4_t limit = vdupq_n_u32(GLMM_MASK_LIMT);
   uint32x4_t cmp0 = vcaltq_f32(v, vreinterpretq_f32_u32(limit));
   float32x4_t cvt0 = vcvtq_f32_s32(vcvtq_s32_f32(v));
-  return vbslq_f32(cmp0, cvt0, v);
+  return glmm_zpreserve(v, vbslq_f32(cmp0, cvt0, v));
 #endif
 }
 
@@ -741,7 +762,7 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
   float32x4_t rnd0 = glmm_round(v);
   uint32x4_t cmp0 = vcgtq_f32(v, rnd0);
   uint32x4_t and0 = vandq_u32(cmp0, vreinterpretq_u32_f32(glmm_set1_rval(1.0f)));
-  return vaddq_f32(rnd0, vreinterpretq_f32_u32(and0));
+  return glmm_zpreserve(v, vaddq_f32(rnd0, vreinterpretq_f32_u32(and0)));
 #endif
 }
 #elif defined(CGLM_SIMD_WASM)
