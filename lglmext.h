@@ -17,6 +17,17 @@
 #include <cglm/cglm.h>
 
 /*!
+ * @brief cast float to int: truncating toward zero and clamping values outside
+ *        the representable range.
+ */
+CGLM_INLINE int glm_ftoi(float x) {
+  if (x != x) return 0; /* NaN */
+  if (x >= -(float)INT_MIN) return INT_MAX;
+  if (x <= (float)INT_MIN) return INT_MIN;
+  return (int)x;
+}
+
+/*!
  * @brief round towards even
  */
 CGLM_INLINE float glm_roundf(float x) {
@@ -191,7 +202,7 @@ CGLM_INLINE float glm_from_half(float16 v) {
 /*!
  * @brief initialize a packed vector.
  */
-CGLM_INLINE void glm_vec4_pack(vec4 input, hvec4 dest) {
+CGLM_INLINE void glm_vec4_pack(const vec4 input, hvec4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(CGLM_SIMD_FP16) && CGLM_HALF_INTRINSICS_x86
   _mm_storeu_si64(dest, _mm_cvtps_ph(glmm_load(input), _MM_FROUND_TO_NEAREST_INT));
 #elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
@@ -207,7 +218,7 @@ CGLM_INLINE void glm_vec4_pack(vec4 input, hvec4 dest) {
 /*!
  * @brief unpack a packed vector.
  */
-CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
+CGLM_INLINE void glm_vec4_unpack(const hvec4 input, vec4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(CGLM_SIMD_FP16) && CGLM_HALF_INTRINSICS_x86
   glmm_store(dest, _mm_cvtph_ps(_mm_loadu_si64(input)));
 #elif defined(CGLM_SIMD_ARM) && defined(CGLM_SIMD_FP16)
@@ -233,6 +244,7 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 #define GLM_MASK_MANT 0x807FFFFFu
 #define GLM_MASK_ABS  0x7FFFFFFFu
 #define GLM_MASK_LIMT 0x4B000000u
+#define GLM_MASK_2P31 0x4F000000u
 #define GLM_MASK_PINF 0x7F800000u
 #define GLM_MASK_NINF 0xFF800000u
 #define GLM_MASK_ALL  0xFFFFFFFFu
@@ -244,6 +256,7 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 #define GLMM_MASK_MANT GLM_MASK_MANT
 #define GLMM_MASK_ABS  GLM_MASK_ABS
 #define GLMM_MASK_LIMT GLM_MASK_LIMT
+#define GLMM_MASK_2P31 GLM_MASK_2P31
 #define GLMM_MASK_PINF GLM_MASK_PINF
 #define GLMM_MASK_NINF GLM_MASK_NINF
 #define GLMM_MASK_ALL  GLM_MASK_ALL
@@ -261,12 +274,14 @@ CGLM_INLINE void glm_vec4_unpack(hvec4 input, vec4 dest) {
 
 GLMM_DECLARE_MASK(GLMM_MASK_SIGN, GLM_MASK_SIGN)
 GLMM_DECLARE_MASK(GLMM_MASK_LIMT, GLM_MASK_LIMT)
+GLMM_DECLARE_MASK(GLMM_MASK_2P31, GLM_MASK_2P31)
 GLMM_DECLARE_MASK(GLMM_MASK_PINF, GLM_MASK_PINF)
 GLMM_DECLARE_MASK(GLMM_MASK_ALL, GLM_MASK_ALL)
 
 #define GLMM_DEFINE_MASK(N) GLMM_NAME_MASK(N).f
 #define GLMM_MASK_SIGN GLMM_DEFINE_MASK(GLMM_MASK_SIGN)
 #define GLMM_MASK_LIMT GLMM_DEFINE_MASK(GLMM_MASK_LIMT)
+#define GLMM_MASK_2P31 GLMM_DEFINE_MASK(GLMM_MASK_2P31)
 #define GLMM_MASK_PINF GLMM_DEFINE_MASK(GLMM_MASK_PINF)
 #define GLMM_MASK_ALL  GLMM_DEFINE_MASK(GLMM_MASK_ALL)
 
@@ -285,7 +300,6 @@ GLMM_DECLARE_MASK(GLMM_MASK_ALL, GLM_MASK_ALL)
 
 /* Abstractions */
 #define glmm_casti _mm_castps_si128
-#define glmm_cvtt _mm_cvttps_epi32
 #define glmm_setzero _mm_setzero_ps
 #define glmm_add _mm_add_ps
 #define glmm_sub _mm_sub_ps
@@ -325,7 +339,7 @@ GLMM_DECLARE_MASK(GLMM_MASK_ALL, GLM_MASK_ALL)
   #define glmm_istore(p, a) _mm_store_si128((__m128i *)p, a)
 #endif
 
-CGLM_INLINE __m128 glmm_load2(vec2 v) {
+CGLM_INLINE __m128 glmm_load2(const vec2 v) {
 #if defined(__SSE2__)
   return _mm_castpd_ps(_mm_load_sd((const double *)v));
 #else
@@ -333,7 +347,7 @@ CGLM_INLINE __m128 glmm_load2(vec2 v) {
 #endif
 }
 
-CGLM_INLINE __m128 glmm_load2h(vec2 v) {
+CGLM_INLINE __m128 glmm_load2h(const vec2 v) {
   return _mm_set_ps(v[1], v[0], v[1], v[0]);
 }
 
@@ -349,7 +363,7 @@ CGLM_INLINE void glmm_store2(vec2 dest, __m128 v) {
 /*!
  * @brief alternate implementation of glmm_load3
  */
-CGLM_INLINE __m128 glmm_load3u(vec3 v) {
+CGLM_INLINE __m128 glmm_load3u(const vec3 v) {
 #if defined(__SSE2__)
   __m128 low = _mm_castpd_ps(_mm_load_sd((const double *)v));
   __m128 high = _mm_load_ss(&v[2]);
@@ -413,18 +427,11 @@ static inline __m128 glmm_negate(__m128 v) {
   return _mm_xor_ps(v, glmm_float32x4_SIGNMASK_NEG);
 }
 
-static inline __m128 glmm_cvti(__m128 v) {
-#if defined(__SSE2__)
-  return _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
-#else
-  __m64 lo = _mm_cvttps_pi32(v);
-  __m64 hi = _mm_cvttps_pi32(_mm_movehl_ps(v, v));
-  __m128 cvt0 = _mm_cvtpi32x2_ps(lo, hi);
-#if defined(__MMX__)
-  _mm_empty();
-#endif
-  return cvt0;
-#endif
+static inline __m128i glmm_cvti_sat(__m128 v) {
+  __m128 lim0 = glmm_setbits1(GLMM_MASK_2P31);
+  __m128 and0 = _mm_and_ps(v, _mm_cmpord_ps(v, v)); /* NaN to 0.0f */
+  __m128i cvt0 = _mm_cvttps_epi32(and0); /* 0x80000000 on out-of-range */
+  return _mm_xor_si128(cvt0, _mm_castps_si128(_mm_cmpge_ps(and0, lim0))); /* +overflow to 0x7FFFFFFF */
 }
 
 static inline __m128 glmm_approx(__m128 x, __m128 y, __m128 eps) {
@@ -463,6 +470,21 @@ static inline __m128 glmm_clamp(__m128 v, __m128 minVal, __m128 maxVal) {
 }
 
 #if !defined(__SSE4_1__)
+/* non-saturating and cheap truncation */
+static inline __m128 glmm_cvti_trunc_raw(__m128 v) {
+#if defined(__SSE2__)
+  return _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
+#else
+  __m64 lo = _mm_cvttps_pi32(v);
+  __m64 hi = _mm_cvttps_pi32(_mm_movehl_ps(v, v));
+  __m128 cvt0 = _mm_cvtpi32x2_ps(lo, hi);
+#if defined(__MMX__)
+  _mm_empty();
+#endif
+  return cvt0;
+#endif
+}
+
 /*
  * Preserve the sign of zero in the result by restoring the inputs sign bit
  * whenever the result is zero.
@@ -503,7 +525,7 @@ static inline __m128 glmm_trunc(__m128 v) {
   return _mm_round_ps(v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
 #else
   __m128 limit = glmm_setbits1(GLMM_MASK_LIMT);
-  __m128 cvt0 = glmm_cvti(v);
+  __m128 cvt0 = glmm_cvti_trunc_raw(v);
   __m128 cmp0 = _mm_cmplt_ps(glmm_abs(v), limit);
   return glmm_zpreserve(v, glmm_select(v, cvt0, cmp0));
 #endif
@@ -532,6 +554,7 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define GLMM_MASK_MANT GLM_MASK_MANT
 #define GLMM_MASK_ABS  GLM_MASK_ABS
 #define GLMM_MASK_LIMT GLM_MASK_LIMT
+#define GLMM_MASK_2P31 GLM_MASK_2P31
 #define GLMM_MASK_PINF GLM_MASK_PINF
 #define GLMM_MASK_NINF GLM_MASK_NINF
 #define GLMM_MASK_ALL  GLM_MASK_ALL
@@ -542,7 +565,7 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 
 /* Abstractions */
 #define glmm_casti vreinterpretq_s32_f32
-#define glmm_cvtt vcvtq_s32_f32
+#define glmm_cvti_sat vcvtq_s32_f32
 #define glmm_setzero() glmm_set1_rval(0.0f)
 #define glmm_add vaddq_f32
 #define glmm_sub vsubq_f32
@@ -573,7 +596,7 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
 #define glmm_iload vld1q_s32
 #define glmm_istore vst1q_s32
 
-static inline float32x4_t glmm_load2(vec2 v) {
+static inline float32x4_t glmm_load2(const vec2 v) {
   return vcombine_f32(vld1_f32(v), vdup_n_f32(0.0f));
 }
 
@@ -582,7 +605,7 @@ static inline void glmm_store2(vec2 dest, float32x4_t v) {
 }
 
 #define glmm_load3u glmm_load3
-static inline float32x4_t glmm_load3(vec3 v) {
+static inline float32x4_t glmm_load3(const vec3 v) {
   float32x2_t low = vld1_f32(v);
   float32x2_t high = vld1_lane_f32(v + 2, vdup_n_f32(0.0f), 0);
   return vcombine_f32(low, high);
@@ -771,6 +794,7 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
 #define GLMM_MASK_MANT GLM_MASK_MANT
 #define GLMM_MASK_ABS  GLM_MASK_ABS
 #define GLMM_MASK_LIMT GLM_MASK_LIMT
+#define GLMM_MASK_2P31 GLM_MASK_2P31
 #define GLMM_MASK_PINF GLM_MASK_PINF
 #define GLMM_MASK_NINF GLM_MASK_NINF
 #define GLMM_MASK_ALL  GLM_MASK_ALL
@@ -781,7 +805,7 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
 
 /* Abstractions */
 #define glmm_casti(x) (x)
-#define glmm_cvtt wasm_i32x4_trunc_sat_f32x4
+#define glmm_cvti_sat wasm_i32x4_trunc_sat_f32x4
 #define glmm_setzero() glmm_set1_rval(0.0f)
 #define glmm_add wasm_f32x4_add
 #define glmm_sub wasm_f32x4_sub
@@ -1044,7 +1068,7 @@ static inline void glmm_sincos(glmm_128 v, glmm_128 *outSin, glmm_128 *outCos) {
 
   /* Range reduction & quadrant; avoiding _mm_cvtps_epi32 */
   glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1_rval(GLM_2_PIf)));
-  glmm_128i quad = glmm_cvtt(qf);
+  glmm_128i quad = glmm_cvti_sat(qf);
   glmm_128i sinOffset = glmm_iand(quad, glmm_iset1(3));
   glmm_128i cosOffset = glmm_iand(glmm_iadd(quad, glmm_iset1(1)), glmm_iset1(3));
   glmm_sincos_poly(glmm_quadrant_reduce(qf, v), &sinx, &cosx);
@@ -1065,7 +1089,7 @@ static inline void glmm_sincos(glmm_128 v, glmm_128 *outSin, glmm_128 *outCos) {
 static inline glmm_128 glmm_tan(glmm_128 v) {
   /* Range reduction & quadrant */
   glmm_128 qf = glmm_round(glmm_mul(v, glmm_set1_rval(GLM_2_PIf)));
-  glmm_128i tanOffset = glmm_iand(glmm_cvtt(qf), glmm_iset1(3));
+  glmm_128i tanOffset = glmm_iand(glmm_cvti_sat(qf), glmm_iset1(3));
   glmm_128 tanMask = glmm_ieq(glmm_iand(tanOffset, glmm_iset1(1)), glmm_isetzero());
   glmm_128 tanx = glmm_tan_poly(glmm_quadrant_reduce(qf, v));
 
@@ -1171,7 +1195,7 @@ static inline glmm_128 glmm_exp(glmm_128 x) {
   exp = glmm_exp_poly(x);
 
   /* multiply by 2^n */
-  pow = glmm_cvtt(n);
+  pow = glmm_cvti_sat(n);
   pow = glmm_iadd(pow, glmm_iset1(0x7F));
   pow = glmm_isll(pow, 23);
   return glmm_mul(exp, glmm_icast(pow));
@@ -1274,21 +1298,21 @@ static inline glmm_128 glmm_atanh(glmm_128 v) {
 /*!
  * @brief check if any component is non-zero
  */
-CGLM_INLINE bool glm_vec2_any(vec2 v) {
+CGLM_INLINE bool glm_vec2_any(const vec2 v) {
   return v[0] != 0.f || v[1] != 0.f;
 }
 
 /*!
  * @brief check if all components are non-zero
  */
-CGLM_INLINE bool glm_vec2_all(vec2 v) {
+CGLM_INLINE bool glm_vec2_all(const vec2 v) {
   return v[0] != 0.f && v[1] != 0.f;
 }
 
 /*!
  * @brief test if the vector components are approximately equal
  */
-CGLM_INLINE void glm_vec2_approx(vec2 a, vec2 b, float eps, vec2 dest) {
+CGLM_INLINE void glm_vec2_approx(const vec2 a, const vec2 b, float eps, vec2 dest) {
   dest[0] = fabsf(a[0] - b[0]) <= eps ? 1.f : 0.f;
   dest[1] = fabsf(a[1] - b[1]) <= eps ? 1.f : 0.f;
 }
@@ -1296,7 +1320,7 @@ CGLM_INLINE void glm_vec2_approx(vec2 a, vec2 b, float eps, vec2 dest) {
 /*!
  * @brief see glm_vec3_angle
  */
-CGLM_INLINE float glm_vec2_angle(vec2 a, vec2 b) {
+CGLM_INLINE float glm_vec2_angle(const vec2 a, const vec2 b) {
   float norm = 1.0f / (glm_vec2_norm(a) * glm_vec2_norm(b));
   return glm_acos(norm * glm_vec2_dot(a, b));
 }
@@ -1312,21 +1336,21 @@ CGLM_INLINE float glm_vec2_angle(vec2 a, vec2 b) {
 /*!
  * @brief check if any item is non-zero
  */
-CGLM_INLINE bool glm_vec3_any(vec3 v) {
+CGLM_INLINE bool glm_vec3_any(const vec3 v) {
   return v[0] != 0.f || v[1] != 0.f || v[2] != 0.f;
 }
 
 /*!
  * @brief check if all components are non-zero
  */
-CGLM_INLINE bool glm_vec3_all(vec3 v) {
+CGLM_INLINE bool glm_vec3_all(const vec3 v) {
   return v[0] != 0.f && v[1] != 0.f && v[2] != 0.f;
 }
 
 /*!
  * @brief test if the vector components are approximately equal (within epsilon)
  */
-CGLM_INLINE void glm_vec3_approx(vec3 a, vec3 b, float eps, vec3 dest) {
+CGLM_INLINE void glm_vec3_approx(const vec3 a, const vec3 b, float eps, vec3 dest) {
   dest[0] = fabsf(a[0] - b[0]) <= eps ? 1.f : 0.f;
   dest[1] = fabsf(a[1] - b[1]) <= eps ? 1.f : 0.f;
   dest[2] = fabsf(a[2] - b[2]) <= eps ? 1.f : 0.f;
@@ -1335,7 +1359,7 @@ CGLM_INLINE void glm_vec3_approx(vec3 a, vec3 b, float eps, vec3 dest) {
 /*!
  * @brief interpolate between two vectors using spherical linear interpolation
  */
-CGLM_INLINE void glm_vec3_slerp(vec3 from, vec3 to, float t, vec3 dest) {
+CGLM_INLINE void glm_vec3_slerp(const vec3 from, const vec3 to, float t, vec3 dest) {
   float cosAlpha = glm_vec3_dot(from, to);
   if (fabsf(cosAlpha) >= 1.f - GLM_FLT_EPSILON)
     glm_vec3_lerp(from, to, t, dest);
@@ -1354,7 +1378,7 @@ CGLM_INLINE void glm_vec3_slerp(vec3 from, vec3 to, float t, vec3 dest) {
 /*!
  * @brief glm_vec3_cross implemented using intrinsics (RH)
  */
-CGLM_INLINE void glm_vec3_cross_simd(vec3 a, vec3 b, vec3 dest) {
+CGLM_INLINE void glm_vec3_cross_simd(const vec3 a, const vec3 b, vec3 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__SSE2__)
   glmm_store3(dest, glmm_cross3(glmm_load3u(a), glmm_load3u(b)));
 #else
@@ -1373,7 +1397,7 @@ CGLM_INLINE void glm_vec3_cross_simd(vec3 a, vec3 b, vec3 dest) {
 /*!
  * @brief glm_vec4_eqv using intrinsics
  */
-CGLM_INLINE bool glm_vec4_eqv_simd(vec4 a, vec4 b) {
+CGLM_INLINE bool glm_vec4_eqv_simd(const vec4 a, const vec4 b) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   return glmm_eqv(glmm_load(a), glmm_load(b));
 #else
@@ -1384,7 +1408,7 @@ CGLM_INLINE bool glm_vec4_eqv_simd(vec4 a, vec4 b) {
 /*!
  * @brief subtract a vector from scalar (s + -v)
  */
-CGLM_INLINE void glm_vec4_ssub(float s, vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_ssub(float s, const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_sub(glmm_set1(s), glmm_load(v)));
 #else
@@ -1398,7 +1422,7 @@ CGLM_INLINE void glm_vec4_ssub(float s, vec4 v, vec4 dest) {
 /*!
  * @brief divide a vector from scalar
  */
-CGLM_INLINE void glm_vec4_sdiv(float s, vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_sdiv(float s, const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_div(glmm_set1(s), glmm_load(v)));
 #else
@@ -1410,7 +1434,7 @@ CGLM_INLINE void glm_vec4_sdiv(float s, vec4 v, vec4 dest) {
 
 /* 8.1. Angle and Trigonometry Functions */
 
-CGLM_INLINE void glm_vec4_rad(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_rad(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1_rval(0.017453292519943295f)));
 #else
@@ -1421,7 +1445,7 @@ CGLM_INLINE void glm_vec4_rad(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_deg(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_deg(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_mul(glmm_load(v), glmm_set1_rval(57.29577951308232f)));
 #else
@@ -1432,7 +1456,7 @@ CGLM_INLINE void glm_vec4_deg(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_sin(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_sin(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_128 sin, cos;
   glmm_sincos(glmm_load(v), &sin, &cos);
@@ -1445,7 +1469,7 @@ CGLM_INLINE void glm_vec4_sin(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_cos(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_cos(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_128 sin, cos;
   glmm_sincos(glmm_load(v), &sin, &cos);
@@ -1458,7 +1482,7 @@ CGLM_INLINE void glm_vec4_cos(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_tan(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_tan(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_tan(glmm_load(v)));
 #else
@@ -1469,7 +1493,7 @@ CGLM_INLINE void glm_vec4_tan(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_asin(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_asin(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_asin(glmm_load(v)));
 #else
@@ -1480,7 +1504,7 @@ CGLM_INLINE void glm_vec4_asin(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_acos(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_acos(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_acos(glmm_load(v)));
 #else
@@ -1491,7 +1515,7 @@ CGLM_INLINE void glm_vec4_acos(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_atan(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_atan(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_atan(glmm_load(v)));
 #else
@@ -1502,7 +1526,7 @@ CGLM_INLINE void glm_vec4_atan(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_atan2(vec4 y, vec4 x, vec4 dest) {
+CGLM_INLINE void glm_vec4_atan2(const vec4 y, const vec4 x, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_atan2(glmm_load(y), glmm_load(x)));
 #else
@@ -1513,7 +1537,7 @@ CGLM_INLINE void glm_vec4_atan2(vec4 y, vec4 x, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_sinh(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_sinh(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_sinh(glmm_load(v)));
 #else
@@ -1524,7 +1548,7 @@ CGLM_INLINE void glm_vec4_sinh(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_cosh(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_cosh(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_cosh(glmm_load(v)));
 #else
@@ -1535,7 +1559,7 @@ CGLM_INLINE void glm_vec4_cosh(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_tanh(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_tanh(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_tanh(glmm_load(v)));
 #else
@@ -1546,7 +1570,7 @@ CGLM_INLINE void glm_vec4_tanh(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_asinh(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_asinh(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_asinh(glmm_load(v)));
 #else
@@ -1557,7 +1581,7 @@ CGLM_INLINE void glm_vec4_asinh(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_acosh(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_acosh(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_acosh(glmm_load(v)));
 #else
@@ -1568,7 +1592,7 @@ CGLM_INLINE void glm_vec4_acosh(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_atanh(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_atanh(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_atanh(glmm_load(v)));
 #else
@@ -1581,26 +1605,26 @@ CGLM_INLINE void glm_vec4_atanh(vec4 v, vec4 dest) {
 
 /* 8.2. Exponential Functions */
 
-CGLM_INLINE void glm_vec4_pow(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_pow(const vec4 a, const vec4 b, vec4 dest) {
   dest[0] = powf(a[0], b[0]);
   dest[1] = powf(a[1], b[1]);
   dest[2] = powf(a[2], b[2]);
   dest[3] = powf(a[3], b[3]);
 }
 
-CGLM_INLINE void glm_vec4_pows(vec4 a, float s, vec4 dest) {
+CGLM_INLINE void glm_vec4_pows(const vec4 a, float s, vec4 dest) {
   CGLM_ALIGN(16) vec4 b;
   glm_vec4_broadcast(s, b);
   glm_vec4_pow(a, b, dest);
 }
 
-CGLM_INLINE void glm_vec4_spow(float s, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_spow(float s, const vec4 b, vec4 dest) {
   CGLM_ALIGN(16) vec4 a;
   glm_vec4_broadcast(s, a);
   glm_vec4_pow(a, b, dest);
 }
 
-CGLM_INLINE void glm_vec4_exp(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_exp(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_exp(glmm_load(v)));
 #else
@@ -1611,7 +1635,7 @@ CGLM_INLINE void glm_vec4_exp(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_log(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_log(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_log(glmm_load(v)));
 #else
@@ -1622,7 +1646,7 @@ CGLM_INLINE void glm_vec4_log(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_exp2(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_exp2(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_exp2(glmm_load(v)));
 #else
@@ -1633,7 +1657,7 @@ CGLM_INLINE void glm_vec4_exp2(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_log2(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_log2(const vec4 v, vec4 dest) {
 #if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_log2(glmm_load(v)));
 #else
@@ -1644,14 +1668,14 @@ CGLM_INLINE void glm_vec4_log2(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_logB(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_logB(const vec4 a, const vec4 b, vec4 dest) {
   dest[0] = glm_log(a[0], b[0]);
   dest[1] = glm_log(a[1], b[1]);
   dest[2] = glm_log(a[2], b[2]);
   dest[3] = glm_log(a[3], b[3]);
 }
 
-CGLM_INLINE void glm_vec4_invsqrt(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_invsqrt(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_invsqrt(glmm_load(v)));
 #else
@@ -1664,7 +1688,7 @@ CGLM_INLINE void glm_vec4_invsqrt(vec4 v, vec4 dest) {
 
 /* 8.3. Common Functions */
 
-CGLM_INLINE void glm_vec4_floor_simd(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_floor_simd(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_floor(glmm_load(v)));
 #else
@@ -1672,7 +1696,7 @@ CGLM_INLINE void glm_vec4_floor_simd(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_trunc(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_trunc(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_trunc(glmm_load(v)));
 #else
@@ -1683,7 +1707,7 @@ CGLM_INLINE void glm_vec4_trunc(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_round(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_round(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_round(glmm_load(v)));
 #else
@@ -1694,7 +1718,7 @@ CGLM_INLINE void glm_vec4_round(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_ceil(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_ceil(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_store(dest, glmm_ceil(glmm_load(v)));
 #else
@@ -1705,7 +1729,7 @@ CGLM_INLINE void glm_vec4_ceil(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_fract_simd(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_fract_simd(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_128 x = glmm_load(v);
   glmm_store(dest, glmm_sub(x, glmm_floor(x)));
@@ -1714,7 +1738,7 @@ CGLM_INLINE void glm_vec4_fract_simd(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_mod_simd(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_mod_simd(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_128 x = glmm_load(a);
   glmm_128 y = glmm_load(b);
@@ -1728,20 +1752,20 @@ CGLM_INLINE void glm_vec4_mod_simd(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_mods_simd(vec4 a, float s, vec4 dest) {
+CGLM_INLINE void glm_vec4_mods_simd(const vec4 a, float s, vec4 dest) {
   CGLM_ALIGN(16) vec4 b;
   glm_vec4_broadcast(s, b);
   glm_vec4_mod_simd(a, b, dest);
 }
 
-CGLM_INLINE void glm_vec4_modf(vec4 v, vec4 integral, vec4 dest) {
+CGLM_INLINE void glm_vec4_modf(const vec4 v, vec4 integral, vec4 dest) {
   dest[0] = modff(v[0], &integral[0]);
   dest[1] = modff(v[1], &integral[1]);
   dest[2] = modff(v[2], &integral[2]);
   dest[3] = modff(v[3], &integral[3]);
 }
 
-CGLM_INLINE void glm_vec4_clamp_to(vec4 v, float minVal, float maxVal, vec4 dest) {
+CGLM_INLINE void glm_vec4_clamp_to(const vec4 v, float minVal, float maxVal, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_128 cl0 = glmm_clamp(glmm_load(v), glmm_set1(minVal), glmm_set1(maxVal));
   glmm_store(dest, cl0);
@@ -1751,7 +1775,7 @@ CGLM_INLINE void glm_vec4_clamp_to(vec4 v, float minVal, float maxVal, vec4 dest
 #endif
 }
 
-CGLM_INLINE void glm_vec4_clampv(vec4 v, vec4 minVal, vec4 maxVal, vec4 dest) {
+CGLM_INLINE void glm_vec4_clampv(const vec4 v, const vec4 minVal, const vec4 maxVal, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_128 cl0 = glmm_clamp(glmm_load(v), glmm_load(minVal), glmm_load(maxVal));
   glmm_store(dest, cl0);
@@ -1763,7 +1787,7 @@ CGLM_INLINE void glm_vec4_clampv(vec4 v, vec4 minVal, vec4 maxVal, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_step_simd(vec4 edge, vec4 x, vec4 dest) {
+CGLM_INLINE void glm_vec4_step_simd(const vec4 edge, const vec4 x, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_le(glmm_load(edge), glmm_load(x)));
 #else
@@ -1771,7 +1795,7 @@ CGLM_INLINE void glm_vec4_step_simd(vec4 edge, vec4 x, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_step_uni_simd(float edge, vec4 x, vec4 dest) {
+CGLM_INLINE void glm_vec4_step_uni_simd(float edge, const vec4 x, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_le(glmm_set1(edge), glmm_load(x)));
 #else
@@ -1779,7 +1803,7 @@ CGLM_INLINE void glm_vec4_step_uni_simd(float edge, vec4 x, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_smoothstep_simd(vec4 edge0, vec4 edge1, vec4 x, vec4 dest) {
+CGLM_INLINE void glm_vec4_smoothstep_simd(const vec4 edge0, const vec4 edge1, const vec4 x, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_128 e0 = glmm_load(edge0);
   glmm_128 e1 = glmm_load(edge1);
@@ -1794,7 +1818,7 @@ CGLM_INLINE void glm_vec4_smoothstep_simd(vec4 edge0, vec4 edge1, vec4 x, vec4 d
 #endif
 }
 
-CGLM_INLINE void glm_vec4_smoothstep_uni_simd(float edge0, float edge1, vec4 x, vec4 dest) {
+CGLM_INLINE void glm_vec4_smoothstep_uni_simd(float edge0, float edge1, const vec4 x, vec4 dest) {
 #if defined(CGLM_SIMD)
   CGLM_ALIGN(16) vec4 e0, e1;
   glm_vec4_broadcast(edge0, e0);
@@ -1805,7 +1829,7 @@ CGLM_INLINE void glm_vec4_smoothstep_uni_simd(float edge0, float edge1, vec4 x, 
 #endif
 }
 
-CGLM_INLINE void glm_vec4_isnanv(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_isnanv(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_isnan(glmm_load(v)));
 #else
@@ -1816,7 +1840,7 @@ CGLM_INLINE void glm_vec4_isnanv(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_isinfv(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_isinfv(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_isinf(glmm_load(v)));
 #else
@@ -1827,28 +1851,28 @@ CGLM_INLINE void glm_vec4_isinfv(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_frexp(vec4 a, ivec4 exp, vec4 dest) {
+CGLM_INLINE void glm_vec4_frexp(const vec4 a, ivec4 exp, vec4 dest) {
   dest[0] = frexpf(a[0], &exp[0]);
   dest[1] = frexpf(a[1], &exp[1]);
   dest[2] = frexpf(a[2], &exp[2]);
   dest[3] = frexpf(a[3], &exp[3]);
 }
 
-CGLM_INLINE void glm_vec4_ldexp(vec4 a, ivec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_ldexp(const vec4 a, const ivec4 b, vec4 dest) {
   dest[0] = ldexpf(a[0], b[0]);
   dest[1] = ldexpf(a[1], b[1]);
   dest[2] = ldexpf(a[2], b[2]);
   dest[3] = ldexpf(a[3], b[3]);
 }
 
-CGLM_INLINE void glm_vec4_fma(vec4 a, vec4 b, vec4 c, vec4 dest) {
+CGLM_INLINE void glm_vec4_fma(const vec4 a, const vec4 b, const vec4 c, vec4 dest) {
   glm_vec4_copy(c, dest);
   glm_vec4_muladd(a, b, dest);
 }
 
 /* 8.5. Geometric Functions */
 
-CGLM_INLINE void glm_vec4_faceforward(vec4 n, vec4 i, vec4 nref, vec4 dest) {
+CGLM_INLINE void glm_vec4_faceforward(const vec4 n, const vec4 i, const vec4 nref, vec4 dest) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 v = glmm_load(n);
   glmm_128 dot0 = glmm_vdot(glmm_load(nref), glmm_load(i));
@@ -1863,7 +1887,7 @@ CGLM_INLINE void glm_vec4_faceforward(vec4 n, vec4 i, vec4 nref, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_reflect_simd(vec4 i, vec4 n, vec4 dest) {
+CGLM_INLINE void glm_vec4_reflect_simd(const vec4 i, const vec4 n, vec4 dest) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 x = glmm_load(i);
   glmm_128 y = glmm_load(n);
@@ -1874,7 +1898,7 @@ CGLM_INLINE void glm_vec4_reflect_simd(vec4 i, vec4 n, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_refract_simd(vec4 i, vec4 n, float eta, vec4 dest) {
+CGLM_INLINE void glm_vec4_refract_simd(const vec4 i, const vec4 n, float eta, vec4 dest) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 x = glmm_load(i);
   glmm_128 y = glmm_load(n);
@@ -1904,7 +1928,7 @@ CGLM_INLINE void glm_vec4_refract_simd(vec4 i, vec4 n, float eta, vec4 dest) {
 
 /* 8.7. Vector Relational Functions */
 
-CGLM_INLINE void glm_vec4_eqto(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_eqto(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_eq(glmm_load(a), glmm_load(b)));
 #else
@@ -1915,7 +1939,7 @@ CGLM_INLINE void glm_vec4_eqto(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_neqto(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_neqto(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_neq(glmm_load(a), glmm_load(b)));
 #else
@@ -1926,7 +1950,7 @@ CGLM_INLINE void glm_vec4_neqto(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_approx(vec4 a, vec4 b, float eps, vec4 dest) {
+CGLM_INLINE void glm_vec4_approx(const vec4 a, const vec4 b, float eps, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_approx(glmm_load(a), glmm_load(b), glmm_set1(eps)));
 #else
@@ -1937,7 +1961,7 @@ CGLM_INLINE void glm_vec4_approx(vec4 a, vec4 b, float eps, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_lessthan(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_lessthan(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_lt(glmm_load(a), glmm_load(b)));
 #else
@@ -1948,7 +1972,7 @@ CGLM_INLINE void glm_vec4_lessthan(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_lessthaneq(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_lessthaneq(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_le(glmm_load(a), glmm_load(b)));
 #else
@@ -1959,7 +1983,7 @@ CGLM_INLINE void glm_vec4_lessthaneq(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_greaterthan(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_greaterthan(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_gt(glmm_load(a), glmm_load(b)));
 #else
@@ -1970,7 +1994,7 @@ CGLM_INLINE void glm_vec4_greaterthan(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_greaterthaneq(vec4 a, vec4 b, vec4 dest) {
+CGLM_INLINE void glm_vec4_greaterthaneq(const vec4 a, const vec4 b, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_ge(glmm_load(a), glmm_load(b)));
 #else
@@ -1981,7 +2005,7 @@ CGLM_INLINE void glm_vec4_greaterthaneq(vec4 a, vec4 b, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_not(vec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4_not(const vec4 v, vec4 dest) {
 #if defined(CGLM_SIMD)
   glmm_maskstore(dest, glmm_eq(glmm_load(v), glmm_setzero()));
 #else
@@ -1992,7 +2016,7 @@ CGLM_INLINE void glm_vec4_not(vec4 v, vec4 dest) {
 #endif
 }
 
-CGLM_INLINE bool glm_vec4_any(vec4 v) {
+CGLM_INLINE bool glm_vec4_any(const vec4 v) {
 #if defined(CGLM_SIMD_x86)
   return glmm_any(glmm_load(v));
 #else
@@ -2000,7 +2024,7 @@ CGLM_INLINE bool glm_vec4_any(vec4 v) {
 #endif
 }
 
-CGLM_INLINE bool glm_vec4_all(vec4 v) {
+CGLM_INLINE bool glm_vec4_all(const vec4 v) {
 #if defined(CGLM_SIMD_x86)
   return glmm_all(glmm_load(v));
 #else
@@ -2008,7 +2032,7 @@ CGLM_INLINE bool glm_vec4_all(vec4 v) {
 #endif
 }
 
-CGLM_INLINE void glm_vec4_mixv(vec4 from, vec4 to, vec4 t, vec4 dest) {
+CGLM_INLINE void glm_vec4_mixv(const vec4 from, const vec4 to, const vec4 t, vec4 dest) {
   CGLM_ALIGN(16) vec4 v; /* from + s * (to - from) */
   glm_vec4_sub(to, from, v);
   glm_vec4_mul(t, v, v);
@@ -2026,7 +2050,7 @@ CGLM_INLINE void glm_vec4_mixv(vec4 from, vec4 to, vec4 t, vec4 dest) {
 /*!
  * @brief glm_quat_from_vecs without the 'unit length' requirement
  */
-CGLM_INLINE void glm_quat_from_to(vec3 a, vec3 b, versor dest) {
+CGLM_INLINE void glm_quat_from_to(const vec3 a, const vec3 b, versor dest) {
   vec3 axis;
   float norm_ab = sqrtf(glm_vec3_dot(a, a) * glm_vec3_dot(b, b));
   float real_part = norm_ab + glm_vec3_dot(a, b);
@@ -2043,7 +2067,7 @@ CGLM_INLINE void glm_quat_from_to(vec3 a, vec3 b, versor dest) {
 /*!
  * @brief initialize a quaternion from three base unit vectors
  */
-CGLM_INLINE void glm_quat_from_basis(vec3 x, vec3 y, vec3 z, versor dest) {
+CGLM_INLINE void glm_quat_from_basis(const vec3 x, const vec3 y, const vec3 z, versor dest) {
   CGLM_ALIGN_MAT mat3 m;
   glm_vec3_copy(x, m[0]);
   glm_vec3_copy(y, m[1]);
@@ -2054,7 +2078,7 @@ CGLM_INLINE void glm_quat_from_basis(vec3 x, vec3 y, vec3 z, versor dest) {
 /*!
  * @brief convert quaternion to mat4 (@NOTE: Does not implicitly normalize 'v')
  */
-CGLM_INLINE void glm_quat_mat4_simd(versor v, mat4 dest) {
+CGLM_INLINE void glm_quat_mat4_simd(const versor v, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && !defined(CGLM_SIMD_WASM)
   __m128 q = glmm_load(v);
   __m128 q2 = _mm_add_ps(q, q);
@@ -2089,7 +2113,7 @@ CGLM_INLINE void glm_quat_mat4_simd(versor v, mat4 dest) {
 /*!
  * @brief conjugate of quaternion
  */
-CGLM_INLINE void glm_quat_conjugate_simd(versor q, versor dest) {
+CGLM_INLINE void glm_quat_conjugate_simd(const versor q, versor dest) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 mask = glmm_setbits(0, GLMM_MASK_SIGN, GLMM_MASK_SIGN, GLMM_MASK_SIGN);
   glmm_store(dest, glmm_xor(glmm_load(q), mask));
@@ -2104,7 +2128,7 @@ CGLM_INLINE void glm_quat_conjugate_simd(versor q, versor dest) {
 /*!
  * @brief inverse of a non-zero quaternion
  */
-CGLM_INLINE void glm_quat_inv_simd(versor q, versor dest) {
+CGLM_INLINE void glm_quat_inv_simd(const versor q, versor dest) {
 #if defined(CGLM_SIMD)
   CGLM_ALIGN(16) versor conj;
   glm_quat_conjugate_simd(q, conj);
@@ -2117,7 +2141,7 @@ CGLM_INLINE void glm_quat_inv_simd(versor q, versor dest) {
 /*!
  * @brief divide two quaternions
  */
-CGLM_INLINE void glm_quat_div(versor p, versor q, versor dest) {
+CGLM_INLINE void glm_quat_div(const versor p, const versor q, versor dest) {
   CGLM_ALIGN(16) versor inv;
   glm_quat_inv_simd(q, inv);
   glm_quat_mul(p, inv, dest);
@@ -2126,7 +2150,7 @@ CGLM_INLINE void glm_quat_div(versor p, versor q, versor dest) {
 /*!
  * @brief rotate vec3 by a quaternion
  */
-CGLM_INLINE void glm_quat_rotatev_simd(versor a, vec3 b, vec3 dest) {
+CGLM_INLINE void glm_quat_rotatev_simd(const versor a, const vec3 b, vec3 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__SSE2__)
   glmm_128 q = glmm_load(a);
   glmm_128 v = glmm_load3u(b);
@@ -2143,7 +2167,7 @@ CGLM_INLINE void glm_quat_rotatev_simd(versor a, vec3 b, vec3 dest) {
 /*!
  * @brief rotate vector by a quaternion
  */
-CGLM_INLINE void glm_quat_rotatev4_simd(versor q, vec4 v, vec4 dest) {
+CGLM_INLINE void glm_quat_rotatev4_simd(const versor q, const vec4 v, vec4 dest) {
   CGLM_ALIGN(16) vec3 v3, r0;
   glm_vec3(v, v3);
   glm_vec3_zero(r0);
@@ -2154,7 +2178,7 @@ CGLM_INLINE void glm_quat_rotatev4_simd(versor q, vec4 v, vec4 dest) {
 /*!
  * @brief rotate a vector by using a quaternion
  */
-CGLM_INLINE void glm_vec3_rotateq_simd(vec3 v, versor q, vec3 dest) {
+CGLM_INLINE void glm_vec3_rotateq_simd(const vec3 v, const versor q, vec3 dest) {
   CGLM_ALIGN(16) versor inv;
   glm_quat_inv_simd(q, inv);
   glm_quat_rotatev_simd(inv, v, dest);
@@ -2163,7 +2187,7 @@ CGLM_INLINE void glm_vec3_rotateq_simd(vec3 v, versor q, vec3 dest) {
 /*!
  * @brief rotate vector using a quaternion
  */
-CGLM_INLINE void glm_vec4_rotateq_simd(vec4 v, versor q, vec4 dest) {
+CGLM_INLINE void glm_vec4_rotateq_simd(const vec4 v, const versor q, vec4 dest) {
   CGLM_ALIGN(16) versor inv;
   glm_quat_inv_simd(q, inv);
   glm_quat_rotatev4_simd(inv, v, dest);
@@ -2172,7 +2196,7 @@ CGLM_INLINE void glm_vec4_rotateq_simd(vec4 v, versor q, vec4 dest) {
 /*!
  * @brief quaternion raised to natural logarithm
  */
-CGLM_INLINE void glm_quat_exp(versor q, versor dest) {
+CGLM_INLINE void glm_quat_exp(const versor q, versor dest) {
   float imlen = glm_quat_imaglen(q);
   if (imlen < GLM_FLT_EPSILON)
     glm_quat_identity(dest);
@@ -2186,7 +2210,7 @@ CGLM_INLINE void glm_quat_exp(versor q, versor dest) {
 /*!
  * @brief natural logarithm of a quaternion
  */
-CGLM_INLINE void glm_quat_log(versor q, versor dest) {
+CGLM_INLINE void glm_quat_log(const versor q, versor dest) {
   float imlen = glm_quat_imaglen(q);
   if (imlen < GLM_FLT_EPSILON) {
     if (q[3] > 0.0f)
@@ -2206,7 +2230,7 @@ CGLM_INLINE void glm_quat_log(versor q, versor dest) {
 /*!
  * @brief quaternion raised to a power
  */
-CGLM_INLINE void glm_quat_pow(versor q, float s, versor dest) {
+CGLM_INLINE void glm_quat_pow(const versor q, float s, versor dest) {
   if (glm_eq(s, 0.0f)) /* Raising to the power of zero should yield 1 */
     glm_quat_identity(dest);
   else {
@@ -2220,7 +2244,7 @@ CGLM_INLINE void glm_quat_pow(versor q, float s, versor dest) {
 /*!
  * @brief square root of quaternion
  */
-CGLM_INLINE void glm_quat_sqrt(versor q, versor dest) {
+CGLM_INLINE void glm_quat_sqrt(const versor q, versor dest) {
   float len = glm_quat_norm(q);
   if (glm_eq(len + q[3], 0.0f))
     glm_quat_identity(dest);
@@ -2233,7 +2257,7 @@ CGLM_INLINE void glm_quat_sqrt(versor q, versor dest) {
 /*!
  * @brief inverse square root of a quaternion
  */
-CGLM_INLINE void glm_quat_invsqrt(versor q, versor dest) {
+CGLM_INLINE void glm_quat_invsqrt(const versor q, versor dest) {
   CGLM_ALIGN(16) versor sqrt;
   glm_quat_sqrt(q, sqrt);
   glm_quat_inv_simd(sqrt, dest);
@@ -2259,56 +2283,60 @@ CGLM_INLINE void glm_ivec4_broadcast(int val, ivec4 d) {
 #endif
 }
 
-CGLM_INLINE void glm_ivec4f(vec4 v, ivec4 dest) {
-  dest[0] = (int)v[0];
-  dest[1] = (int)v[1];
-  dest[2] = (int)v[2];
-  dest[3] = (int)v[3];
+CGLM_INLINE void glm_ivec4f(const vec4 v, ivec4 dest) {
+#if defined(CGLM_SIMD)
+  glmm_istore(dest, glmm_cvti_sat(glmm_load(v)));
+#else
+  dest[0] = glm_ftoi(v[0]);
+  dest[1] = glm_ftoi(v[1]);
+  dest[2] = glm_ftoi(v[2]);
+  dest[3] = glm_ftoi(v[3]);
+#endif
 }
 
-CGLM_INLINE void glm_vec4i(ivec4 v, vec4 dest) {
+CGLM_INLINE void glm_vec4i(const ivec4 v, vec4 dest) {
   dest[0] = (float)v[0];
   dest[1] = (float)v[1];
   dest[2] = (float)v[2];
   dest[3] = (float)v[3];
 }
 
-CGLM_INLINE void glm_ivec4_bnot(ivec4 v, ivec4 dest) {
+CGLM_INLINE void glm_ivec4_bnot(const ivec4 v, ivec4 dest) {
   dest[0] = glm_intop(^, ~glm_castS2U(0), v[0]);
   dest[1] = glm_intop(^, ~glm_castS2U(0), v[1]);
   dest[2] = glm_intop(^, ~glm_castS2U(0), v[2]);
   dest[3] = glm_intop(^, ~glm_castS2U(0), v[3]);
 }
 
-CGLM_INLINE void glm_ivec4_band(ivec4 x, ivec4 y, ivec4 dest) {
+CGLM_INLINE void glm_ivec4_band(const ivec4 x, const ivec4 y, ivec4 dest) {
   dest[0] = glm_intop(&, x[0], y[0]);
   dest[1] = glm_intop(&, x[1], y[1]);
   dest[2] = glm_intop(&, x[2], y[2]);
   dest[3] = glm_intop(&, x[3], y[3]);
 }
 
-CGLM_INLINE void glm_ivec4_bor(ivec4 x, ivec4 y, ivec4 dest) {
+CGLM_INLINE void glm_ivec4_bor(const ivec4 x, const ivec4 y, ivec4 dest) {
   dest[0] = glm_intop(|, x[0], y[0]);
   dest[1] = glm_intop(|, x[1], y[1]);
   dest[2] = glm_intop(|, x[2], y[2]);
   dest[3] = glm_intop(|, x[3], y[3]);
 }
 
-CGLM_INLINE void glm_ivec4_bxor(ivec4 x, ivec4 y, ivec4 dest) {
+CGLM_INLINE void glm_ivec4_bxor(const ivec4 x, const ivec4 y, ivec4 dest) {
   dest[0] = glm_intop(^, x[0], y[0]);
   dest[1] = glm_intop(^, x[1], y[1]);
   dest[2] = glm_intop(^, x[2], y[2]);
   dest[3] = glm_intop(^, x[3], y[3]);
 }
 
-CGLM_INLINE void glm_ivec4_shl(ivec4 x, ivec4 y, ivec4 dest) {
+CGLM_INLINE void glm_ivec4_shl(const ivec4 x, const ivec4 y, ivec4 dest) {
   dest[0] = glm_intop(<<, x[0], y[0]);
   dest[1] = glm_intop(<<, x[1], y[1]);
   dest[2] = glm_intop(<<, x[2], y[2]);
   dest[3] = glm_intop(<<, x[3], y[3]);
 }
 
-CGLM_INLINE void glm_ivec4_shr(ivec4 x, ivec4 y, ivec4 dest) {
+CGLM_INLINE void glm_ivec4_shr(const ivec4 x, const ivec4 y, ivec4 dest) {
   dest[0] = glm_intop(>>, x[0], y[0]);
   dest[1] = glm_intop(>>, x[1], y[1]);
   dest[2] = glm_intop(>>, x[2], y[2]);
@@ -2326,7 +2354,7 @@ CGLM_INLINE void glm_ivec4_shr(ivec4 x, ivec4 y, ivec4 dest) {
 /*!
  * @brief check if two matrices are identical
  */
-CGLM_INLINE bool glm_mat2_eq(mat2 m1, mat2 m2) {
+CGLM_INLINE bool glm_mat2_eq(CGLM_CONST mat2 m1, CGLM_CONST mat2 m2) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   return glmm_eqv(glmm_load(m1[0]), glmm_load(m2[0]));
 #else
@@ -2337,7 +2365,7 @@ CGLM_INLINE bool glm_mat2_eq(mat2 m1, mat2 m2) {
 /*!
  * @brief check if matrix components are identical
  */
-CGLM_INLINE void glm_mat2_eqv(mat2 m1, mat2 m2, vec2 dest) {
+CGLM_INLINE void glm_mat2_eqv(CGLM_CONST mat2 m1, CGLM_CONST mat2 m2, vec2 dest) {
   dest[0] = (float)glm_vec2_eqv(m1[0], m2[0]);
   dest[1] = (float)glm_vec2_eqv(m1[1], m2[1]);
 }
@@ -2345,7 +2373,7 @@ CGLM_INLINE void glm_mat2_eqv(mat2 m1, mat2 m2, vec2 dest) {
 /*!
  * @brief check if matrix components are different
  */
-CGLM_INLINE void glm_mat2_neqv(mat2 m1, mat2 m2, vec2 dest) {
+CGLM_INLINE void glm_mat2_neqv(CGLM_CONST mat2 m1, CGLM_CONST mat2 m2, vec2 dest) {
   dest[0] = (float)!glm_vec2_eqv(m1[0], m2[0]);
   dest[1] = (float)!glm_vec2_eqv(m1[1], m2[1]);
 }
@@ -2353,7 +2381,7 @@ CGLM_INLINE void glm_mat2_neqv(mat2 m1, mat2 m2, vec2 dest) {
 /*!
  * @brief check if two matrices are approximately equal (with epsilon)
  */
-CGLM_INLINE void glm_mat2_approx(mat2 m1, mat2 m2, float eps, vec2 dest) {
+CGLM_INLINE void glm_mat2_approx(CGLM_CONST mat2 m1, CGLM_CONST mat2 m2, float eps, vec2 dest) {
   mat2 result;
   glm_vec2_approx(m1[0], m2[0], eps, result[0]);
   glm_vec2_approx(m1[1], m2[1], eps, result[1]);
@@ -2364,7 +2392,7 @@ CGLM_INLINE void glm_mat2_approx(mat2 m1, mat2 m2, float eps, vec2 dest) {
 /*!
  * @brief add a vector to each matrix component
  */
-CGLM_INLINE void glm_mat2_addv(mat2 m, vec2 v, mat2 dest) {
+CGLM_INLINE void glm_mat2_addv(CGLM_CONST mat2 m, const vec2 v, mat2 dest) {
 #if defined(CGLM_SIMD_x86)
   glmm_store(dest[0], glmm_add(glmm_load(m[0]), glmm_load2h(v)));
 #else
@@ -2376,7 +2404,7 @@ CGLM_INLINE void glm_mat2_addv(mat2 m, vec2 v, mat2 dest) {
 /*!
  * @brief subtract the vector from each matrix component
  */
-CGLM_INLINE void glm_mat2_subv(mat2 m, vec2 v, mat2 dest) {
+CGLM_INLINE void glm_mat2_subv(CGLM_CONST mat2 m, const vec2 v, mat2 dest) {
 #if defined(CGLM_SIMD_x86)
   glmm_store(dest[0], glmm_sub(glmm_load(m[0]), glmm_load2h(v)));
 #else
@@ -2388,7 +2416,7 @@ CGLM_INLINE void glm_mat2_subv(mat2 m, vec2 v, mat2 dest) {
 /*!
  * @brief subtract a matrix from a vector: dest = v + -m
  */
-CGLM_INLINE void glm_mat2_vsub(vec2 v, mat2 m, mat2 dest) {
+CGLM_INLINE void glm_mat2_vsub(const vec2 v, CGLM_CONST mat2 m, mat2 dest) {
 #if defined(CGLM_SIMD_x86)
   glmm_store(dest[0], glmm_sub(glmm_load2h(v), glmm_load(m[0])));
 #else
@@ -2400,7 +2428,7 @@ CGLM_INLINE void glm_mat2_vsub(vec2 v, mat2 m, mat2 dest) {
 /*!
  * @brief transpose multiply a vec2 with a mat2
  */
-CGLM_INLINE void glm_mat2_vmul(vec2 v, mat2 m, vec2 dest) {
+CGLM_INLINE void glm_mat2_vmul(const vec2 v, CGLM_CONST mat2 m, vec2 dest) {
   vec2 res;
   res[0] = m[0][0] * v[0] + m[0][1] * v[1];
   res[1] = m[1][0] * v[0] + m[1][1] * v[1];
@@ -2410,7 +2438,7 @@ CGLM_INLINE void glm_mat2_vmul(vec2 v, mat2 m, vec2 dest) {
 /*!
  * @brief transpose divide a vec2 with a mat2
  */
-CGLM_INLINE void glm_mat2_vdiv(vec2 v, mat2 m, vec2 dest) {
+CGLM_INLINE void glm_mat2_vdiv(const vec2 v, CGLM_CONST mat2 m, vec2 dest) {
   mat2 inv;
   glm_mat2_inv(m, inv);
   glm_mat2_vmul(v, inv, dest);
@@ -2419,7 +2447,7 @@ CGLM_INLINE void glm_mat2_vdiv(vec2 v, mat2 m, vec2 dest) {
 /*!
  * @brief divide two matrices
  */
-CGLM_INLINE void glm_mat2_div(mat2 m1, mat2 m2, mat2 dest) {
+CGLM_INLINE void glm_mat2_div(CGLM_CONST mat2 m1, CGLM_CONST mat2 m2, mat2 dest) {
   mat2 inv;
   glm_mat2_inv(m2, inv);
   glm_mat2_mul(m1, inv, dest);
@@ -2428,7 +2456,7 @@ CGLM_INLINE void glm_mat2_div(mat2 m1, mat2 m2, mat2 dest) {
 /*!
  * @brief divide mat2 with vec2 (column vector)
  */
-CGLM_INLINE void glm_mat2_divv(mat2 m, vec2 v, vec2 dest) {
+CGLM_INLINE void glm_mat2_divv(CGLM_CONST mat2 m, const vec2 v, vec2 dest) {
   mat2 inv;
   glm_mat2_inv(m, inv);
   glm_mat2_mulv(inv, v, dest);
@@ -2437,7 +2465,7 @@ CGLM_INLINE void glm_mat2_divv(mat2 m, vec2 v, vec2 dest) {
 /*!
  * @brief Compute the outer product of a column and row vector
  */
-CGLM_INLINE void glm_mat2_outerproduct(vec2 c, vec2 r, mat2 dest) {
+CGLM_INLINE void glm_mat2_outerproduct(const vec2 c, const vec2 r, mat2 dest) {
   glm_vec2_scale(c, r[0], dest[0]);
   glm_vec2_scale(c, r[1], dest[1]);
 }
@@ -2453,7 +2481,7 @@ CGLM_INLINE void glm_mat2_outerproduct(vec2 c, vec2 r, mat2 dest) {
 /*!
  * @brief check if two matrices are identical
  */
-CGLM_INLINE bool glm_mat3_eq(mat3 m1, mat3 m2) {
+CGLM_INLINE bool glm_mat3_eq(CGLM_CONST mat3 m1, CGLM_CONST mat3 m2) {
   return glm_vec3_eqv(m1[0], m2[0])
          && glm_vec3_eqv(m1[1], m2[1])
          && glm_vec3_eqv(m1[2], m2[2]);
@@ -2462,7 +2490,7 @@ CGLM_INLINE bool glm_mat3_eq(mat3 m1, mat3 m2) {
 /*!
  * @brief check if matrix components are identical
  */
-CGLM_INLINE void glm_mat3_eqv(mat3 m1, mat3 m2, vec3 dest) {
+CGLM_INLINE void glm_mat3_eqv(CGLM_CONST mat3 m1, CGLM_CONST mat3 m2, vec3 dest) {
   dest[0] = (float)glm_vec3_eqv(m1[0], m2[0]);
   dest[1] = (float)glm_vec3_eqv(m1[1], m2[1]);
   dest[2] = (float)glm_vec3_eqv(m1[2], m2[2]);
@@ -2471,7 +2499,7 @@ CGLM_INLINE void glm_mat3_eqv(mat3 m1, mat3 m2, vec3 dest) {
 /*!
  * @brief check if matrix components are different
  */
-CGLM_INLINE void glm_mat3_neqv(mat3 m1, mat3 m2, vec3 dest) {
+CGLM_INLINE void glm_mat3_neqv(CGLM_CONST mat3 m1, CGLM_CONST mat3 m2, vec3 dest) {
   dest[0] = (float)!glm_vec3_eqv(m1[0], m2[0]);
   dest[1] = (float)!glm_vec3_eqv(m1[1], m2[1]);
   dest[2] = (float)!glm_vec3_eqv(m1[2], m2[2]);
@@ -2480,7 +2508,7 @@ CGLM_INLINE void glm_mat3_neqv(mat3 m1, mat3 m2, vec3 dest) {
 /*!
  * @brief check if two matrices are approximately equal (with epsilon)
  */
-CGLM_INLINE void glm_mat3_approx(mat3 m1, mat3 m2, float eps, vec3 dest) {
+CGLM_INLINE void glm_mat3_approx(CGLM_CONST mat3 m1, CGLM_CONST mat3 m2, float eps, vec3 dest) {
   CGLM_ALIGN_MAT mat3 result;
   glm_vec3_approx(m1[0], m2[0], eps, result[0]);
   glm_vec3_approx(m1[1], m2[1], eps, result[1]);
@@ -2493,7 +2521,7 @@ CGLM_INLINE void glm_mat3_approx(mat3 m1, mat3 m2, float eps, vec3 dest) {
 /*!
  * @brief add a vector to each matrix component
  */
-CGLM_INLINE void glm_mat3_addv(mat3 m, vec3 v, mat3 dest) {
+CGLM_INLINE void glm_mat3_addv(CGLM_CONST mat3 m, const vec3 v, mat3 dest) {
   glm_vec3_add(m[0], v, dest[0]);
   glm_vec3_add(m[1], v, dest[1]);
   glm_vec3_add(m[2], v, dest[2]);
@@ -2502,7 +2530,7 @@ CGLM_INLINE void glm_mat3_addv(mat3 m, vec3 v, mat3 dest) {
 /*!
  * @brief subtract the vector from each matrix component
  */
-CGLM_INLINE void glm_mat3_subv(mat3 m, vec3 v, mat3 dest) {
+CGLM_INLINE void glm_mat3_subv(CGLM_CONST mat3 m, const vec3 v, mat3 dest) {
   glm_vec3_sub(m[0], v, dest[0]);
   glm_vec3_sub(m[1], v, dest[1]);
   glm_vec3_sub(m[2], v, dest[2]);
@@ -2511,7 +2539,7 @@ CGLM_INLINE void glm_mat3_subv(mat3 m, vec3 v, mat3 dest) {
 /*!
  * @brief subtract a matrix from a vector: dest = v + -m
  */
-CGLM_INLINE void glm_mat3_vsub(vec3 v, mat3 m, mat3 dest) {
+CGLM_INLINE void glm_mat3_vsub(const vec3 v, CGLM_CONST mat3 m, mat3 dest) {
   glm_vec3_sub(v, m[0], dest[0]);
   glm_vec3_sub(v, m[1], dest[1]);
   glm_vec3_sub(v, m[2], dest[2]);
@@ -2520,7 +2548,7 @@ CGLM_INLINE void glm_mat3_vsub(vec3 v, mat3 m, mat3 dest) {
 /*!
  * @brief transpose multiply mat3 with vec3 (column vector)
  */
-CGLM_INLINE void glm_mat3_vmul(vec3 v, mat3 m, vec3 dest) {
+CGLM_INLINE void glm_mat3_vmul(const vec3 v, CGLM_CONST mat3 m, vec3 dest) {
   vec3 res;
   res[0] = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2];
   res[1] = m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2];
@@ -2531,7 +2559,7 @@ CGLM_INLINE void glm_mat3_vmul(vec3 v, mat3 m, vec3 dest) {
 /*!
  * @brief transpose divide mat3 with vec3 (column vector)
  */
-CGLM_INLINE void glm_mat3_vdiv(vec3 v, mat3 m, vec3 dest) {
+CGLM_INLINE void glm_mat3_vdiv(const vec3 v, CGLM_CONST mat3 m, vec3 dest) {
   CGLM_ALIGN_MAT mat3 inv;
   glm_mat3_inv(m, inv);
   glm_mat3_vmul(v, inv, dest);
@@ -2540,7 +2568,7 @@ CGLM_INLINE void glm_mat3_vdiv(vec3 v, mat3 m, vec3 dest) {
 /*!
  * @brief divide two matrices
  */
-CGLM_INLINE void glm_mat3_div(mat3 m1, mat3 m2, mat3 dest) {
+CGLM_INLINE void glm_mat3_div(CGLM_CONST mat3 m1, CGLM_CONST mat3 m2, mat3 dest) {
   CGLM_ALIGN_MAT mat3 inv;
   glm_mat3_inv(m2, inv);
   glm_mat3_mul(m1, inv, dest);
@@ -2549,7 +2577,7 @@ CGLM_INLINE void glm_mat3_div(mat3 m1, mat3 m2, mat3 dest) {
 /*!
  * @brief divide mat3 by vec3 (column vector)
  */
-CGLM_INLINE void glm_mat3_divv(mat3 m, vec3 v, vec3 dest) {
+CGLM_INLINE void glm_mat3_divv(CGLM_CONST mat3 m, const vec3 v, vec3 dest) {
   CGLM_ALIGN_MAT mat3 inv;
   glm_mat3_inv(m, inv);
   glm_mat3_mulv(inv, v, dest);
@@ -2558,7 +2586,7 @@ CGLM_INLINE void glm_mat3_divv(mat3 m, vec3 v, vec3 dest) {
 /*!
  * @brief Compute the outer product of a column and row vector
  */
-CGLM_INLINE void glm_mat3_outerproduct(vec3 c, vec3 r, mat3 dest) {
+CGLM_INLINE void glm_mat3_outerproduct(const vec3 c, const vec3 r, mat3 dest) {
   glm_vec3_scale(c, r[0], dest[0]);
   glm_vec3_scale(c, r[1], dest[1]);
   glm_vec3_scale(c, r[2], dest[2]);
@@ -2595,7 +2623,7 @@ CGLM_INLINE void glm_mat4_diag(mat4 mat, float s) {
 /*!
  * @brief copy upper-left of mat4 to mat2
  */
-CGLM_INLINE void glm_mat4_pick2(mat4 mat, mat2 dest) {
+CGLM_INLINE void glm_mat4_pick2(CGLM_CONST mat4 mat, mat2 dest) {
   dest[0][0] = mat[0][0];
   dest[0][1] = mat[0][1];
   dest[1][0] = mat[1][0];
@@ -2605,7 +2633,7 @@ CGLM_INLINE void glm_mat4_pick2(mat4 mat, mat2 dest) {
 /*!
  * @brief copy mat2 to mat4's upper-left
  */
-CGLM_INLINE void glm_mat4_ins2(mat2 mat, mat4 dest) {
+CGLM_INLINE void glm_mat4_ins2(CGLM_CONST mat2 mat, mat4 dest) {
   dest[0][0] = mat[0][0];
   dest[0][1] = mat[0][1];
   dest[1][0] = mat[1][0];
@@ -2615,7 +2643,7 @@ CGLM_INLINE void glm_mat4_ins2(mat2 mat, mat4 dest) {
 /*!
  * @brief check if two matrices are identical
  */
-CGLM_INLINE bool glm_mat4_eq(mat4 m1, mat4 m2) {
+CGLM_INLINE bool glm_mat4_eq(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 cmp0 = _mm256_cmp_ps(glmm_load256(m1[0]), glmm_load256(m2[0]), _CMP_EQ_OQ);
   __m256 cmp1 = _mm256_cmp_ps(glmm_load256(m1[2]), glmm_load256(m2[2]), _CMP_EQ_OQ);
@@ -2631,7 +2659,7 @@ CGLM_INLINE bool glm_mat4_eq(mat4 m1, mat4 m2) {
 /*!
  * @brief check if matrix components are identical
  */
-CGLM_INLINE void glm_mat4_eqv(mat4 m1, mat4 m2, vec4 dest) {
+CGLM_INLINE void glm_mat4_eqv(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, vec4 dest) {
   dest[0] = (float)glm_vec4_eqv_simd(m1[0], m2[0]);
   dest[1] = (float)glm_vec4_eqv_simd(m1[1], m2[1]);
   dest[2] = (float)glm_vec4_eqv_simd(m1[2], m2[2]);
@@ -2641,7 +2669,7 @@ CGLM_INLINE void glm_mat4_eqv(mat4 m1, mat4 m2, vec4 dest) {
 /*!
  * @brief check if matrix components are different
  */
-CGLM_INLINE void glm_mat4_neqv(mat4 m1, mat4 m2, vec4 dest) {
+CGLM_INLINE void glm_mat4_neqv(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, vec4 dest) {
   dest[0] = (float)!glm_vec4_eqv_simd(m1[0], m2[0]);
   dest[1] = (float)!glm_vec4_eqv_simd(m1[1], m2[1]);
   dest[2] = (float)!glm_vec4_eqv_simd(m1[2], m2[2]);
@@ -2651,7 +2679,7 @@ CGLM_INLINE void glm_mat4_neqv(mat4 m1, mat4 m2, vec4 dest) {
 /*!
  * @brief check if two matrices are approximately equal (with epsilon)
  */
-CGLM_INLINE void glm_mat4_approx(mat4 m1, mat4 m2, float eps, vec4 dest) {
+CGLM_INLINE void glm_mat4_approx(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, float eps, vec4 dest) {
 #if defined(CGLM_SIMD_x86) || defined(CGLM_SIMD_WASM)
   glmm_128 e = glmm_set1(eps);
   dest[0] = glmm_all(glmm_approx(glmm_load(m1[0]), glmm_load(m2[0]), e));
@@ -2674,7 +2702,7 @@ CGLM_INLINE void glm_mat4_approx(mat4 m1, mat4 m2, float eps, vec4 dest) {
 /*!
  * @brief negate columns of matrix
  */
-CGLM_INLINE void glm_mat4_negate_to(mat4 mat, mat4 dest) {
+CGLM_INLINE void glm_mat4_negate_to(CGLM_CONST mat4 mat, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_castsi256_ps(_mm256_set1_epi32(GLMM_NEGZEROf));
   glmm_store256(dest[0], _mm256_xor_ps(glmm_load256(mat[0]), set0));
@@ -2690,7 +2718,7 @@ CGLM_INLINE void glm_mat4_negate_to(mat4 mat, mat4 dest) {
 /*!
  * @brief add two matrices
  */
-CGLM_INLINE void glm_mat4_add(mat4 m1, mat4 m2, mat4 dest) {
+CGLM_INLINE void glm_mat4_add(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   glmm_store256(dest[0], _mm256_add_ps(glmm_load256(m1[0]), glmm_load256(m2[0])));
   glmm_store256(dest[2], _mm256_add_ps(glmm_load256(m1[2]), glmm_load256(m2[2])));
@@ -2705,7 +2733,7 @@ CGLM_INLINE void glm_mat4_add(mat4 m1, mat4 m2, mat4 dest) {
 /*!
  * @brief add a vector to each matrix component
  */
-CGLM_INLINE void glm_mat4_addv(mat4 m, vec4 v, mat4 dest) {
+CGLM_INLINE void glm_mat4_addv(CGLM_CONST mat4 m, const vec4 v, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_set_m128(glmm_load(v), glmm_load(v));
   glmm_store256(dest[0], _mm256_add_ps(glmm_load256(m[0]), set0));
@@ -2721,7 +2749,7 @@ CGLM_INLINE void glm_mat4_addv(mat4 m, vec4 v, mat4 dest) {
 /*!
  * @brief add scalar to a matrix
  */
-CGLM_INLINE void glm_mat4_adds(mat4 m, float s, mat4 dest) {
+CGLM_INLINE void glm_mat4_adds(CGLM_CONST mat4 m, float s, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_set1_ps(s);
   glmm_store256(dest[0], _mm256_add_ps(glmm_load256(m[0]), set0));
@@ -2737,7 +2765,7 @@ CGLM_INLINE void glm_mat4_adds(mat4 m, float s, mat4 dest) {
 /*!
  * @brief subtract two matrices
  */
-CGLM_INLINE void glm_mat4_sub(mat4 m1, mat4 m2, mat4 dest) {
+CGLM_INLINE void glm_mat4_sub(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   glmm_store256(dest[0], _mm256_sub_ps(glmm_load256(m1[0]), glmm_load256(m2[0])));
   glmm_store256(dest[2], _mm256_sub_ps(glmm_load256(m1[2]), glmm_load256(m2[2])));
@@ -2752,7 +2780,7 @@ CGLM_INLINE void glm_mat4_sub(mat4 m1, mat4 m2, mat4 dest) {
 /*!
  * @brief subtract the vector from each matrix component
  */
-CGLM_INLINE void glm_mat4_subv(mat4 m, vec4 v, mat4 dest) {
+CGLM_INLINE void glm_mat4_subv(CGLM_CONST mat4 m, const vec4 v, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_set_m128(glmm_load(v), glmm_load(v));
   glmm_store256(dest[0], _mm256_sub_ps(glmm_load256(m[0]), set0));
@@ -2768,14 +2796,14 @@ CGLM_INLINE void glm_mat4_subv(mat4 m, vec4 v, mat4 dest) {
 /*!
  * @brief subtract a scalar from each matrix component
  */
-CGLM_INLINE void glm_mat4_subs(mat4 m, float s, mat4 dest) {
+CGLM_INLINE void glm_mat4_subs(CGLM_CONST mat4 m, float s, mat4 dest) {
   glm_mat4_adds(m, -s, dest);
 }
 
 /*!
  * @brief subtract a matrix from scalar (s + -m)
  */
-CGLM_INLINE void glm_mat4_ssub(float s, mat4 m, mat4 dest) {
+CGLM_INLINE void glm_mat4_ssub(float s, CGLM_CONST mat4 m, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_set1_ps(s);
   glmm_store256(dest[0], _mm256_sub_ps(set0, glmm_load256(m[0])));
@@ -2791,7 +2819,7 @@ CGLM_INLINE void glm_mat4_ssub(float s, mat4 m, mat4 dest) {
 /*!
  * @brief subtract a matrix from a vector: dest = v + -m
  */
-CGLM_INLINE void glm_mat4_vsub(vec4 v, mat4 m, mat4 dest) {
+CGLM_INLINE void glm_mat4_vsub(const vec4 v, CGLM_CONST mat4 m, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_set_m128(glmm_load(v), glmm_load(v));
   glmm_store256(dest[0], _mm256_sub_ps(set0, glmm_load256(m[0])));
@@ -2807,7 +2835,7 @@ CGLM_INLINE void glm_mat4_vsub(vec4 v, mat4 m, mat4 dest) {
 /*!
  * @brief scale a matrix (multiply by scalar)
  */
-CGLM_INLINE void glm_mat4_scale_to(mat4 m, float s, mat4 dest) {
+CGLM_INLINE void glm_mat4_scale_to(CGLM_CONST mat4 m, float s, mat4 dest) {
   glm_mat4_copy(m, dest);
   glm_mat4_scale(dest, s);
 }
@@ -2815,7 +2843,7 @@ CGLM_INLINE void glm_mat4_scale_to(mat4 m, float s, mat4 dest) {
 /*!
  * @brief inverse scale a matrix (divide by scalar)
  */
-CGLM_INLINE void glm_mat4_scale_inv(mat4 m, float s, mat4 dest) {
+CGLM_INLINE void glm_mat4_scale_inv(CGLM_CONST mat4 m, float s, mat4 dest) {
   if (s != 0.f)
     glm_mat4_scale_to(m, 1.0f / s, dest);
   else {
@@ -2829,7 +2857,7 @@ CGLM_INLINE void glm_mat4_scale_inv(mat4 m, float s, mat4 dest) {
 /*!
  * @brief transpose multiply mat4 with vec4 (column vector)
  */
-CGLM_INLINE void glm_mat4_vmul(vec4 v, mat4 m, vec4 dest) {
+CGLM_INLINE void glm_mat4_vmul(const vec4 v, CGLM_CONST mat4 m, vec4 dest) {
 #if defined(CGLM_SIMD)
   mat4 t;
   glm_mat4_transpose_to(m, t);
@@ -2847,7 +2875,7 @@ CGLM_INLINE void glm_mat4_vmul(vec4 v, mat4 m, vec4 dest) {
 /*!
  * @brief transpose divide mat4 with vec4 (column vector)
  */
-CGLM_INLINE void glm_mat4_vdiv(vec4 v, mat4 m, vec4 dest) {
+CGLM_INLINE void glm_mat4_vdiv(const vec4 v, CGLM_CONST mat4 m, vec4 dest) {
   mat4 inv;
   glm_mat4_inv(m, inv);
   glm_mat4_vmul(v, inv, dest);
@@ -2856,7 +2884,7 @@ CGLM_INLINE void glm_mat4_vdiv(vec4 v, mat4 m, vec4 dest) {
 /*!
  * @brief divide m1 by m2
  */
-CGLM_INLINE void glm_mat4_div(mat4 m1, mat4 m2, mat4 dest) {
+CGLM_INLINE void glm_mat4_div(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, mat4 dest) {
   mat4 inv;
   glm_mat4_inv(m2, inv);
   glm_mat4_mul(m1, inv, dest);
@@ -2865,7 +2893,7 @@ CGLM_INLINE void glm_mat4_div(mat4 m1, mat4 m2, mat4 dest) {
 /*!
  * @brief divide a mat4 by a vec4 (column vector)
  */
-CGLM_INLINE void glm_mat4_divv(mat4 m, vec4 v, vec4 dest) {
+CGLM_INLINE void glm_mat4_divv(CGLM_CONST mat4 m, const vec4 v, vec4 dest) {
   mat4 inv;
   glm_mat4_inv(m, inv);
   glm_mat4_mulv(inv, v, dest);
@@ -2874,7 +2902,7 @@ CGLM_INLINE void glm_mat4_divv(mat4 m, vec4 v, vec4 dest) {
 /*!
  * @brief divide a scalar by matrix
  */
-CGLM_INLINE void glm_mat4_sdiv(float s, mat4 m, mat4 dest) {
+CGLM_INLINE void glm_mat4_sdiv(float s, CGLM_CONST mat4 m, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   __m256 set0 = _mm256_set1_ps(s);
   glmm_store256(dest[0], _mm256_div_ps(set0, glmm_load256(m[0])));
@@ -2890,7 +2918,7 @@ CGLM_INLINE void glm_mat4_sdiv(float s, mat4 m, mat4 dest) {
 /*!
  * @brief multiply two matrices component-wise.
  */
-CGLM_INLINE void glm_mat4_compmult(mat4 m1, mat4 m2, mat4 dest) {
+CGLM_INLINE void glm_mat4_compmult(CGLM_CONST mat4 m1, CGLM_CONST mat4 m2, mat4 dest) {
 #if defined(CGLM_SIMD_x86) && defined(__AVX__)
   glmm_store256(dest[0], _mm256_mul_ps(glmm_load256(m1[0]), glmm_load256(m2[0])));
   glmm_store256(dest[2], _mm256_mul_ps(glmm_load256(m1[2]), glmm_load256(m2[2])));
@@ -2907,7 +2935,7 @@ CGLM_INLINE void glm_mat4_compmult(mat4 m1, mat4 m2, mat4 dest) {
  *        parameter r as a row vector and does a linear algebraic matrix
  *        multiply c * r.
  */
-CGLM_INLINE void glm_mat4_outerproduct(vec4 c, vec4 r, mat4 dest) {
+CGLM_INLINE void glm_mat4_outerproduct(const vec4 c, const vec4 r, mat4 dest) {
   glm_vec4_scale(c, r[0], dest[0]);
   glm_vec4_scale(c, r[1], dest[1]);
   glm_vec4_scale(c, r[2], dest[2]);
@@ -2917,7 +2945,7 @@ CGLM_INLINE void glm_mat4_outerproduct(vec4 c, vec4 r, mat4 dest) {
 /*!
  * @brief glm_rotate_make using intrinsics
  */
-CGLM_INLINE void glm_rotate_make_simd(mat4 m, float angle, vec3 axis_) {
+CGLM_INLINE void glm_rotate_make_simd(mat4 m, float angle, const vec3 axis_) {
 #if defined(CGLM_SIMD_x86) && !defined(CGLM_SIMD_WASM)
   float sin_a = sinf(angle);
   float cos_a = cosf(angle);
@@ -2949,7 +2977,7 @@ CGLM_INLINE void glm_rotate_make_simd(mat4 m, float angle, vec3 axis_) {
  * @brief create an affine transformation from translation, rotation, and
  *        scaling components
  */
-CGLM_INLINE void glm_compose_trs(vec3 t, versor q, vec3 s, mat4 dest) {
+CGLM_INLINE void glm_compose_trs(const vec3 t, const versor q, const vec3 s, mat4 dest) {
   mat4 m;
   glm_quat_mat4(q, m);
   glm_vec4_scale(m[0], s[0], dest[0]);
@@ -2962,7 +2990,7 @@ CGLM_INLINE void glm_compose_trs(vec3 t, versor q, vec3 s, mat4 dest) {
  * @brief Create a spherical billboard that rotates around the specified object
  *        position (LH)
  */
-CGLM_INLINE void glm_billboard_lh(vec3 obj_pos, vec3 eye, vec3 up, vec3 fwd, mat4 dest) {
+CGLM_INLINE void glm_billboard_lh(const vec3 obj_pos, const vec3 eye, const vec3 up, const vec3 fwd, mat4 dest) {
   float norm;
   CGLM_ALIGN(16) vec3 f, u, s;
 
@@ -2985,7 +3013,7 @@ CGLM_INLINE void glm_billboard_lh(vec3 obj_pos, vec3 eye, vec3 up, vec3 fwd, mat
  * @brief Create a spherical billboard that rotates around the specified object
  *        position (RH)
  */
-CGLM_INLINE void glm_billboard_rh(vec3 obj_pos, vec3 eye, vec3 up, vec3 fwd, mat4 dest) {
+CGLM_INLINE void glm_billboard_rh(const vec3 obj_pos, const vec3 eye, const vec3 up, const vec3 fwd, mat4 dest) {
   float norm;
   CGLM_ALIGN(16) vec3 f, u, s;
 
@@ -3004,7 +3032,7 @@ CGLM_INLINE void glm_billboard_rh(vec3 obj_pos, vec3 eye, vec3 up, vec3 fwd, mat
   glm_vec4(obj_pos, 1.0f, dest[3]);
 }
 
-CGLM_INLINE void glm_billboard(vec3 obj_pos, vec3 eye, vec3 up, vec3 fwd, mat4 dest) {
+CGLM_INLINE void glm_billboard(const vec3 obj_pos, const vec3 eye, const vec3 up, const vec3 fwd, mat4 dest) {
 #if CGLM_CONFIG_CLIP_CONTROL & CGLM_CLIP_CONTROL_LH_BIT
   glm_billboard_lh(obj_pos, eye, up, fwd, dest);
 #elif CGLM_CONFIG_CLIP_CONTROL & CGLM_CLIP_CONTROL_RH_BIT
@@ -3035,25 +3063,25 @@ CGLM_INLINE void glm_billboard(vec3 obj_pos, vec3 eye, vec3 up, vec3 fwd, mat4 d
  *         sufficiently large, not counting the terminating null character.
  */
 
-CGLM_INLINE int glm_vec2_str(char *buff, size_t size, vec3 v) {
+CGLM_INLINE int glm_vec2_str(char *buff, size_t size, const vec3 v) {
   return glm_sprintf(buff, size, "vec2(%f, %f)",
     glm_cast(v[0]), glm_cast(v[1])
   );
 }
 
-CGLM_INLINE int glm_vec3_str(char *buff, size_t size, vec3 v) {
+CGLM_INLINE int glm_vec3_str(char *buff, size_t size, const vec3 v) {
   return glm_sprintf(buff, size, "vec3(%f, %f, %f)",
     glm_cast(v[0]), glm_cast(v[1]), glm_cast(v[2])
   );
 }
 
-CGLM_INLINE int glm_vec4_str(char *buff, size_t size, vec4 v) {
+CGLM_INLINE int glm_vec4_str(char *buff, size_t size, const vec4 v) {
   return glm_sprintf(buff, size, "vec4(%f, %f, %f, %f)",
     glm_cast(v[0]), glm_cast(v[1]), glm_cast(v[2]), glm_cast(v[3])
   );
 }
 
-CGLM_INLINE int glm_quat_str(char *buff, size_t size, versor q) {
+CGLM_INLINE int glm_quat_str(char *buff, size_t size, const versor q) {
   return glm_sprintf(buff, size, "quat(%f, {%f, %f, %f})",
     glm_cast(q[3]), glm_cast(q[0]), glm_cast(q[1]), glm_cast(q[2])
   );
@@ -3066,14 +3094,14 @@ CGLM_INLINE int glm_quat_str(char *buff, size_t size, versor q) {
  *         sufficiently large, not counting the terminating null character.
  */
 
-CGLM_INLINE int glm_mat2_str(char *buff, size_t size, mat2 m) {
+CGLM_INLINE int glm_mat2_str(char *buff, size_t size, CGLM_CONST mat2 m) {
   return glm_sprintf(buff, size, "mat2x2((%f, %f), (%f, %f))",
     glm_cast(m[0][0]), glm_cast(m[0][1]),
     glm_cast(m[1][0]), glm_cast(m[1][1])
   );
 }
 
-CGLM_INLINE int glm_mat3_str(char *buff, size_t size, mat3 m) {
+CGLM_INLINE int glm_mat3_str(char *buff, size_t size, CGLM_CONST mat3 m) {
   return glm_sprintf(buff, size, "mat3x3((%f, %f, %f), (%f, %f, %f), (%f, %f, %f))",
     glm_cast(m[0][0]), glm_cast(m[0][1]), glm_cast(m[0][2]),
     glm_cast(m[1][0]), glm_cast(m[1][1]), glm_cast(m[1][2]),
@@ -3081,7 +3109,7 @@ CGLM_INLINE int glm_mat3_str(char *buff, size_t size, mat3 m) {
   );
 }
 
-CGLM_INLINE int glm_mat4_str(char *buff, size_t size, mat4 m) {
+CGLM_INLINE int glm_mat4_str(char *buff, size_t size, CGLM_CONST mat4 m) {
   return glm_sprintf(buff, size,
     "mat4x4((%f, %f, %f, %f), (%f, %f, %f, %f), (%f, %f, %f, %f), (%f, %f, %f, %f))",
     glm_cast(m[0][0]), glm_cast(m[0][1]), glm_cast(m[0][2]), glm_cast(m[0][3]),
@@ -3120,14 +3148,14 @@ static inline size_t glmm_hash_combine(size_t seed, size_t value) {
   return seed;
 }
 
-CGLM_INLINE size_t glm_vec2_hash(vec2 v) {
+CGLM_INLINE size_t glm_vec2_hash(const vec2 v) {
   size_t Hash = 0x9DA040E3; /* joaat("vec2") */
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
   return Hash;
 }
 
-CGLM_INLINE size_t glm_vec3_hash(vec3 v) {
+CGLM_INLINE size_t glm_vec3_hash(const vec3 v) {
   size_t Hash = 0xAF3DE41E;
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
@@ -3135,7 +3163,7 @@ CGLM_INLINE size_t glm_vec3_hash(vec3 v) {
   return Hash;
 }
 
-CGLM_INLINE size_t glm_vec4_hash(vec4 v) {
+CGLM_INLINE size_t glm_vec4_hash(const vec4 v) {
   size_t Hash = 0x9B2DBBFE;
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[1]));
@@ -3144,7 +3172,7 @@ CGLM_INLINE size_t glm_vec4_hash(vec4 v) {
   return Hash;
 }
 
-CGLM_INLINE size_t glm_quat_hash(versor v) {
+CGLM_INLINE size_t glm_quat_hash(const versor v) {
   size_t Hash = 0xA3675366; /* joaat("quat") */
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[3]));
   Hash = glmm_hash_combine(Hash, glmm_hashf(v[0]));
@@ -3153,14 +3181,14 @@ CGLM_INLINE size_t glm_quat_hash(versor v) {
   return Hash;
 }
 
-CGLM_INLINE size_t glm_mat2_hash(mat2 m) {
+CGLM_INLINE size_t glm_mat2_hash(CGLM_CONST mat2 m) {
   size_t Hash = 0x7ABED661; /* joaat("mat2") */
   Hash = glmm_hash_combine(Hash, glm_vec2_hash(m[0]));
   Hash = glmm_hash_combine(Hash, glm_vec2_hash(m[1]));
   return Hash;
 }
 
-CGLM_INLINE size_t glm_mat3_hash(mat3 m) {
+CGLM_INLINE size_t glm_mat3_hash(CGLM_CONST mat3 m) {
   size_t Hash = 0x898473EC;
   Hash = glmm_hash_combine(Hash, glm_vec3_hash(m[0]));
   Hash = glmm_hash_combine(Hash, glm_vec3_hash(m[1]));
@@ -3168,7 +3196,7 @@ CGLM_INLINE size_t glm_mat3_hash(mat3 m) {
   return Hash;
 }
 
-CGLM_INLINE size_t glm_mat4_hash(mat4 m) {
+CGLM_INLINE size_t glm_mat4_hash(CGLM_CONST mat4 m) {
   size_t Hash = 0xA644AD6C;
   Hash = glmm_hash_combine(Hash, glm_vec4_hash(m[0]));
   Hash = glmm_hash_combine(Hash, glm_vec4_hash(m[1]));
@@ -3210,7 +3238,7 @@ CGLM_INLINE glm_euler_seq glm_parse_euler(const char *s, bool extrinsic) {
 /*!
  * @brief extract euler angles using XYZ order
  */
-CGLM_INLINE void glm_euler_angles_xyz(mat4 m, vec3 dest) {
+CGLM_INLINE void glm_euler_angles_xyz(CGLM_CONST mat4 m, vec3 dest) {
   float thetaX, thetaY, thetaZ;
   if (m[2][0] < 1.f) {
     if (m[2][0] > -1.f) {
@@ -3238,7 +3266,7 @@ CGLM_INLINE void glm_euler_angles_xyz(mat4 m, vec3 dest) {
 /*!
  * @brief extract euler angles using XZY order
  */
-CGLM_INLINE void glm_euler_angles_xzy(mat4 m, vec3 dest) {
+CGLM_INLINE void glm_euler_angles_xzy(CGLM_CONST mat4 m, vec3 dest) {
   float thetaX, thetaY, thetaZ;
   if (m[1][0] < 1.f) {
     if (m[1][0] > -1.f) {
@@ -3266,7 +3294,7 @@ CGLM_INLINE void glm_euler_angles_xzy(mat4 m, vec3 dest) {
 /*!
  * @brief extract euler angles using YXZ order
  */
-CGLM_INLINE void glm_euler_angles_yxz(mat4 m, vec3 dest) {
+CGLM_INLINE void glm_euler_angles_yxz(CGLM_CONST mat4 m, vec3 dest) {
   float thetaX, thetaY, thetaZ;
   if (m[2][1] < 1.f) {
     if (m[2][1] > -1.f) {
@@ -3294,7 +3322,7 @@ CGLM_INLINE void glm_euler_angles_yxz(mat4 m, vec3 dest) {
 /*!
  * @brief extract euler angles using YZX order
  */
-CGLM_INLINE void glm_euler_angles_yzx(mat4 m, vec3 dest) {
+CGLM_INLINE void glm_euler_angles_yzx(CGLM_CONST mat4 m, vec3 dest) {
   float thetaX, thetaY, thetaZ;
   if (m[0][1] < 1.f) {
     if (m[0][1] > -1.f) {
@@ -3322,7 +3350,7 @@ CGLM_INLINE void glm_euler_angles_yzx(mat4 m, vec3 dest) {
 /*!
  * @brief extract euler angles using ZXY order
  */
-CGLM_INLINE void glm_euler_angles_zxy(mat4 m, vec3 dest) {
+CGLM_INLINE void glm_euler_angles_zxy(CGLM_CONST mat4 m, vec3 dest) {
   float thetaX, thetaY, thetaZ;
   if (m[1][2] < 1.f) {
     if (m[1][2] > -1.f) {
@@ -3350,7 +3378,7 @@ CGLM_INLINE void glm_euler_angles_zxy(mat4 m, vec3 dest) {
 /*!
  * @brief extract euler angles using ZYX order
  */
-CGLM_INLINE void glm_euler_angles_zyx(mat4 m, vec3 dest) {
+CGLM_INLINE void glm_euler_angles_zyx(CGLM_CONST mat4 m, vec3 dest) {
   float thetaX, thetaY, thetaZ;
   if (m[0][2] < 1.f) {
     if (m[0][2] > -1.f) {
@@ -3379,7 +3407,7 @@ CGLM_INLINE void glm_euler_angles_zyx(mat4 m, vec3 dest) {
  * @brief extract euler angles
  */
 CGLM_INLINE
-void glm_euler_to_order(mat4 m, glm_euler_seq ord, vec3 dest) {
+void glm_euler_to_order(CGLM_CONST mat4 m, glm_euler_seq ord, vec3 dest) {
   switch (ord) {
     case GLM_EULER_XYZ: glm_euler_angles_xyz(m, dest); break;
     case GLM_EULER_XZY: glm_euler_angles_xzy(m, dest); break;
@@ -3394,7 +3422,7 @@ void glm_euler_to_order(mat4 m, glm_euler_seq ord, vec3 dest) {
  * @brief build quaternion from euler angles
  */
 CGLM_INLINE
-void glm_euler_by_orderq(vec3 angles, glm_euler_seq ord, versor dest) {
+void glm_euler_by_orderq(const vec3 angles, glm_euler_seq ord, versor dest) {
   switch (ord) {
     case GLM_EULER_XYZ: glm_euler_xyz_quat(angles, dest); break;
     case GLM_EULER_XZY: glm_euler_xzy_quat(angles, dest); break;
@@ -3409,7 +3437,7 @@ void glm_euler_by_orderq(vec3 angles, glm_euler_seq ord, versor dest) {
  * @brief extract euler angles from a quaternion
  */
 CGLM_INLINE
-void glm_euler_to_orderq(versor q, glm_euler_seq ord, vec3 dest) {
+void glm_euler_to_orderq(const versor q, glm_euler_seq ord, vec3 dest) {
   mat4 m;
   glm_quat_mat4(q, m);
   glm_euler_to_order(m, ord, dest);
