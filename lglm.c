@@ -1083,7 +1083,7 @@ static int glm_createVector(lua_State *L, int desired) {
 static int glm_createVectorInt(lua_State *L, int desired) {
   vec4 v;
   int len = glm_constructVector(L, desired, v);
-  glm_pushvid(vvaltag(len), glm_vec4_trunc, v);
+  glm_pushvid(vvaltag(len), glm_ivec4f_trunc, v);
   return 1;
 }
 
@@ -2797,7 +2797,7 @@ int lglm_POW(lua_State *L, StkId ra, TValue *rb, TValue *rc) {
 
 /*
 ** Bit operations. As bitwise operators only apply to int vectors this
-** implementation will int-cast.
+** implementation will int-saturate.
 */
 #define lglm_BitOp(L, A, B, C, F)                                         \
   LUA_MLM_BEGIN                                                           \

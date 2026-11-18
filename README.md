@@ -560,7 +560,7 @@ Uses a modified (GNU make required) version of the makefile
 
 ## Developer Notes
 
-1. Improve SIGFPE testing (and more defensive programming in [lglm.c](lglm.c) where possible).
+1. Improve SIGFPE, subnormal, and FTZ testing (and more defensive programming in [lglm.c](lglm.c) where possible).
 1. Cleanup test scripts/environment and publish.
 1. Parser/opcodes/builtins for default libraries.
 1. String parsing/formatting optimizations.

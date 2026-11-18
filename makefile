@@ -63,13 +63,16 @@ DEFAULT_LDFLAGS:= $(patsubst -s,,$(DEFAULT_LDFLAGS))
 endif
 
 ifdef UBSAN
-UBSAN_FLAGS= -fsanitize=null,undefined,alignment,signed-integer-overflow
+UBSAN_FLAGS= -fsanitize=null,undefined,alignment
+ifneq '' '$(findstring clang,$(COMPILER_VERSION))'
+	UBSAN_FLAGS+= -fsanitize=nullability,implicit-conversion,local-bounds
+endif
 DEFAULT_CFLAGS+= $(UBSAN_FLAGS) -g -fno-omit-frame-pointer
 DEFAULT_LDFLAGS:= $(patsubst -s,,$(DEFAULT_LDFLAGS)) $(UBSAN_FLAGS)
 endif
 
 ifdef ASAN
-ASAN_FLAGS= -fsanitize=address
+ASAN_FLAGS= -fsanitize=address -fsanitize=pointer-subtract -fsanitize=pointer-compare
 DEFAULT_CFLAGS+= $(ASAN_FLAGS) -g -fno-omit-frame-pointer
 DEFAULT_LDFLAGS:= $(patsubst -s,,$(DEFAULT_LDFLAGS)) $(ASAN_FLAGS)
 endif

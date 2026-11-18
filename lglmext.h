@@ -16,14 +16,26 @@
 #include <stddef.h>
 #include <cglm/cglm.h>
 
+/* cglm/types.h: additional constants for float-to-int conversions */
+
+/* Lowest float that fits in an int32_t: -2^31 (0xCF000000) */
+#define GLM_F2I_LOWEST        (-2147483648.0f)
+
+/* Largest float that fits in an int32_t: 2^31 - 128 (0x4EFFFFFF) */
+#define GLM_F2I_HIGHEST       2147483520.0f
+
+/* First float that does NOT fit in an int32_t: 2^31 (0x4F000000) */
+#define GLM_F2I_OVERFLOW_POS  2147483648.0f
+
 /*!
  * @brief cast float to int: truncating toward zero and clamping values outside
- *        the representable range.
+ *        the representable range. This function should be a candidate for
+ *        fast-math-proofing.
  */
 CGLM_INLINE int glm_ftoi(float x) {
   if (x != x) return 0; /* NaN */
-  if (x >= -(float)INT_MIN) return INT_MAX;
-  if (x <= (float)INT_MIN) return INT_MIN;
+  if (x >= GLM_F2I_OVERFLOW_POS) return INT_MAX;
+  if (x <= GLM_F2I_LOWEST) return INT_MIN;
   return (int)x;
 }
 
@@ -250,6 +262,13 @@ CGLM_INLINE void glm_vec4_unpack(const hvec4 input, vec4 dest) {
 #define GLM_MASK_ALL  0xFFFFFFFFu
 
 #if defined(CGLM_SIMD_x86)
+/* Features, see https://github.com/recp/cglm/pull/412 */
+#if defined(__SSE2__)
+#define CGLM_SIMD_INT_SUPPORT 1
+#else
+#define CGLM_SIMD_INT_SUPPORT 0
+#endif
+
 /* Masking */
 #if defined(__SSE2__)
 #define GLMM_MASK_SIGN GLM_MASK_SIGN
@@ -274,14 +293,12 @@ CGLM_INLINE void glm_vec4_unpack(const hvec4 input, vec4 dest) {
 
 GLMM_DECLARE_MASK(GLMM_MASK_SIGN, GLM_MASK_SIGN)
 GLMM_DECLARE_MASK(GLMM_MASK_LIMT, GLM_MASK_LIMT)
-GLMM_DECLARE_MASK(GLMM_MASK_2P31, GLM_MASK_2P31)
 GLMM_DECLARE_MASK(GLMM_MASK_PINF, GLM_MASK_PINF)
 GLMM_DECLARE_MASK(GLMM_MASK_ALL, GLM_MASK_ALL)
 
 #define GLMM_DEFINE_MASK(N) GLMM_NAME_MASK(N).f
 #define GLMM_MASK_SIGN GLMM_DEFINE_MASK(GLMM_MASK_SIGN)
 #define GLMM_MASK_LIMT GLMM_DEFINE_MASK(GLMM_MASK_LIMT)
-#define GLMM_MASK_2P31 GLMM_DEFINE_MASK(GLMM_MASK_2P31)
 #define GLMM_MASK_PINF GLMM_DEFINE_MASK(GLMM_MASK_PINF)
 #define GLMM_MASK_ALL  GLMM_DEFINE_MASK(GLMM_MASK_ALL)
 
@@ -427,12 +444,39 @@ static inline __m128 glmm_negate(__m128 v) {
   return _mm_xor_ps(v, glmm_float32x4_SIGNMASK_NEG);
 }
 
+#if !defined(__SSE4_1__)
+/*
+ * A non-saturating and cheap truncation
+ *
+ * Note: LLVM made MMX intrinsics unconditionally depend on SSE2. A pure SSE1
+ * implementation is provided as a fallback (consistency with cglm). That said,
+ * if the fallback is still being compiled ...
+ */
+static inline __m128 glmm_cvti_raw(__m128 v) {
+#if defined(__SSE2__)
+  return _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
+#else
+  __m128 zer0 = _mm_setzero_ps();
+  __m128 v1 = _mm_shuffle_ps(v, v, _MM_SHUFFLE(1, 1, 1, 1));
+  __m128 v2 = _mm_movehl_ps(v, v);
+  __m128 v3 = _mm_shuffle_ps(v, v, _MM_SHUFFLE(3, 3, 3, 3));
+  __m128 f0 = _mm_cvtsi32_ss(zer0, _mm_cvtt_ss2si(v));
+  __m128 f1 = _mm_cvtsi32_ss(zer0, _mm_cvtt_ss2si(v1));
+  __m128 f2 = _mm_cvtsi32_ss(zer0, _mm_cvtt_ss2si(v2));
+  __m128 f3 = _mm_cvtsi32_ss(zer0, _mm_cvtt_ss2si(v3));
+  return _mm_movelh_ps(_mm_unpacklo_ps(f0, f1), _mm_unpacklo_ps(f2, f3));
+#endif
+}
+#endif
+
+#if CGLM_SIMD_INT_SUPPORT
 static inline __m128i glmm_cvti_sat(__m128 v) {
   __m128 lim0 = glmm_setbits1(GLMM_MASK_2P31);
   __m128 and0 = _mm_and_ps(v, _mm_cmpord_ps(v, v)); /* NaN to 0.0f */
   __m128i cvt0 = _mm_cvttps_epi32(and0); /* 0x80000000 on out-of-range */
   return _mm_xor_si128(cvt0, _mm_castps_si128(_mm_cmpge_ps(and0, lim0))); /* +overflow to 0x7FFFFFFF */
 }
+#endif
 
 static inline __m128 glmm_approx(__m128 x, __m128 y, __m128 eps) {
   __m128 sub0 = _mm_sub_ps(x, y);
@@ -470,21 +514,6 @@ static inline __m128 glmm_clamp(__m128 v, __m128 minVal, __m128 maxVal) {
 }
 
 #if !defined(__SSE4_1__)
-/* non-saturating and cheap truncation */
-static inline __m128 glmm_cvti_trunc_raw(__m128 v) {
-#if defined(__SSE2__)
-  return _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
-#else
-  __m64 lo = _mm_cvttps_pi32(v);
-  __m64 hi = _mm_cvttps_pi32(_mm_movehl_ps(v, v));
-  __m128 cvt0 = _mm_cvtpi32x2_ps(lo, hi);
-#if defined(__MMX__)
-  _mm_empty();
-#endif
-  return cvt0;
-#endif
-}
-
 /*
  * Preserve the sign of zero in the result by restoring the inputs sign bit
  * whenever the result is zero.
@@ -525,7 +554,7 @@ static inline __m128 glmm_trunc(__m128 v) {
   return _mm_round_ps(v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
 #else
   __m128 limit = glmm_setbits1(GLMM_MASK_LIMT);
-  __m128 cvt0 = glmm_cvti_trunc_raw(v);
+  __m128 cvt0 = glmm_cvti_raw(v);
   __m128 cmp0 = _mm_cmplt_ps(glmm_abs(v), limit);
   return glmm_zpreserve(v, glmm_select(v, cvt0, cmp0));
 #endif
@@ -549,6 +578,9 @@ static inline __m128 glmm_cross3(__m128 a, __m128 b) {
   return glmm_shuff1(sub0, 3, 0, 2, 1);
 }
 #elif defined(CGLM_SIMD_ARM)
+/* Features */
+#define CGLM_SIMD_INT_SUPPORT 1
+
 /* Masking */
 #define GLMM_MASK_SIGN GLM_MASK_SIGN
 #define GLMM_MASK_MANT GLM_MASK_MANT
@@ -789,6 +821,9 @@ static inline float32x4_t glmm_ceil(float32x4_t v) {
 #endif
 }
 #elif defined(CGLM_SIMD_WASM)
+/* Features */
+#define CGLM_SIMD_INT_SUPPORT 1
+
 /* Masking */
 #define GLMM_MASK_SIGN GLM_MASK_SIGN
 #define GLMM_MASK_MANT GLM_MASK_MANT
@@ -905,16 +940,14 @@ static inline v128_t glmm_invsqrt(v128_t v) {
 ** trig.h: Constants pulled from cephes
 ** ===================================================================
 */
-/* @TODO: https://github.com/recp/cglm/pull/412 */
-#if defined(CGLM_SIMD_x86)
-  #if defined(__SSE2__)
-    #define CGLM_TRIG_SIMD 1
-  #endif
-#elif defined(CGLM_SIMD)
-  #define CGLM_TRIG_SIMD 1
+/* SSE2 is a requirement x86/x64 (for now?) */
+#if defined(CGLM_SIMD)
+  #define CGLM_SIMD_TRIG CGLM_SIMD_INT_SUPPORT
+#else
+  #define CGLM_SIMD_TRIG 0
 #endif
 
-#if defined(CGLM_TRIG_SIMD)
+#if CGLM_SIMD_TRIG
 /*!
  * @brief sincos expansion helper
  */
@@ -1457,7 +1490,7 @@ CGLM_INLINE void glm_vec4_deg(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_sin(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_128 sin, cos;
   glmm_sincos(glmm_load(v), &sin, &cos);
   glmm_store(dest, sin);
@@ -1470,7 +1503,7 @@ CGLM_INLINE void glm_vec4_sin(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_cos(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_128 sin, cos;
   glmm_sincos(glmm_load(v), &sin, &cos);
   glmm_store(dest, cos);
@@ -1483,7 +1516,7 @@ CGLM_INLINE void glm_vec4_cos(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_tan(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_tan(glmm_load(v)));
 #else
   dest[0] = tanf(v[0]);
@@ -1494,7 +1527,7 @@ CGLM_INLINE void glm_vec4_tan(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_asin(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_asin(glmm_load(v)));
 #else
   dest[0] = glm_asin(v[0]);
@@ -1505,7 +1538,7 @@ CGLM_INLINE void glm_vec4_asin(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_acos(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_acos(glmm_load(v)));
 #else
   dest[0] = glm_acos(v[0]);
@@ -1516,7 +1549,7 @@ CGLM_INLINE void glm_vec4_acos(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_atan(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_atan(glmm_load(v)));
 #else
   dest[0] = atanf(v[0]);
@@ -1527,7 +1560,7 @@ CGLM_INLINE void glm_vec4_atan(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_atan2(const vec4 y, const vec4 x, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_atan2(glmm_load(y), glmm_load(x)));
 #else
   dest[0] = atan2f(y[0], x[0]);
@@ -1538,7 +1571,7 @@ CGLM_INLINE void glm_vec4_atan2(const vec4 y, const vec4 x, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_sinh(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_sinh(glmm_load(v)));
 #else
   dest[0] = sinhf(v[0]);
@@ -1549,7 +1582,7 @@ CGLM_INLINE void glm_vec4_sinh(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_cosh(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_cosh(glmm_load(v)));
 #else
   dest[0] = coshf(v[0]);
@@ -1560,7 +1593,7 @@ CGLM_INLINE void glm_vec4_cosh(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_tanh(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_tanh(glmm_load(v)));
 #else
   dest[0] = tanhf(v[0]);
@@ -1571,7 +1604,7 @@ CGLM_INLINE void glm_vec4_tanh(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_asinh(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_asinh(glmm_load(v)));
 #else
   dest[0] = asinhf(v[0]);
@@ -1582,7 +1615,7 @@ CGLM_INLINE void glm_vec4_asinh(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_acosh(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_acosh(glmm_load(v)));
 #else
   dest[0] = glm_acosh(v[0]);
@@ -1593,7 +1626,7 @@ CGLM_INLINE void glm_vec4_acosh(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_atanh(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_atanh(glmm_load(v)));
 #else
   dest[0] = glm_atanh(v[0]);
@@ -1625,7 +1658,7 @@ CGLM_INLINE void glm_vec4_spow(float s, const vec4 b, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_exp(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_exp(glmm_load(v)));
 #else
   dest[0] = expf(v[0]);
@@ -1636,7 +1669,7 @@ CGLM_INLINE void glm_vec4_exp(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_log(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_log(glmm_load(v)));
 #else
   dest[0] = logf(v[0]);
@@ -1647,7 +1680,7 @@ CGLM_INLINE void glm_vec4_log(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_exp2(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_exp2(glmm_load(v)));
 #else
   dest[0] = exp2f(v[0]);
@@ -1658,7 +1691,7 @@ CGLM_INLINE void glm_vec4_exp2(const vec4 v, vec4 dest) {
 }
 
 CGLM_INLINE void glm_vec4_log2(const vec4 v, vec4 dest) {
-#if defined(CGLM_TRIG_SIMD) && defined(CGLM_USE_APPROX)
+#if CGLM_SIMD_TRIG && defined(CGLM_USE_APPROX)
   glmm_store(dest, glmm_log2(glmm_load(v)));
 #else
   dest[0] = log2f(v[0]);
@@ -2275,8 +2308,24 @@ CGLM_INLINE void glm_quat_invsqrt(const versor q, versor dest) {
 #define glm_castU2S(i) ((int)(i))
 #define glm_intop(op, v1, v2) glm_castU2S(glm_castS2U(v1) op glm_castS2U(v2))
 
+/*!
+ * @brief A slightly saturating truncf that handles special values.
+ *
+ * Infinities saturate to the float value of the int32 limits, making the
+ * function odd-symmetric (i.e., negation commutes within the float domain).
+ *
+ * @warning The result for INFINITY is 2^31, which is out of range for int. Do
+ *          not cast this result directly to int: use glm_ftoi instead.
+ */
+CGLM_INLINE float glm_ftofi(float x) {
+  if (x != x) return 0.0f; /* NaN  -> +0.0f */
+  if (x == INFINITY) return GLM_F2I_OVERFLOW_POS;
+  if (x == -INFINITY) return GLM_F2I_LOWEST;
+  return truncf(x); /* Consider: -0.0f -> +0.0f */
+}
+
 CGLM_INLINE void glm_ivec4_broadcast(int val, ivec4 d) {
-#if (defined(CGLM_SIMD_x86) && defined(__SSE2__)) || defined(CGLM_SIMD_ARM)
+#if defined(CGLM_SIMD) && CGLM_SIMD_INT_SUPPORT
   glmm_istore(d, glmm_iset1(val));
 #else
   d[0] = d[1] = d[2] = d[3] = val;
@@ -2284,13 +2333,33 @@ CGLM_INLINE void glm_ivec4_broadcast(int val, ivec4 d) {
 }
 
 CGLM_INLINE void glm_ivec4f(const vec4 v, ivec4 dest) {
-#if defined(CGLM_SIMD)
+#if defined(CGLM_SIMD) && CGLM_SIMD_INT_SUPPORT
   glmm_istore(dest, glmm_cvti_sat(glmm_load(v)));
 #else
   dest[0] = glm_ftoi(v[0]);
   dest[1] = glm_ftoi(v[1]);
   dest[2] = glm_ftoi(v[2]);
   dest[3] = glm_ftoi(v[3]);
+#endif
+}
+
+CGLM_INLINE void glm_ivec4f_trunc(const vec4 v, vec4 dest) {
+#if defined(CGLM_SIMD)
+  glmm_128 fmax = glmm_set1(GLM_F2I_OVERFLOW_POS);
+  glmm_128 fmin = glmm_set1(GLM_F2I_LOWEST);
+  glmm_128 ninf = glmm_setbits1(GLMM_MASK_NINF);
+  glmm_128 pinf = glmm_setbits1(GLMM_MASK_PINF);
+  glmm_128 x = glmm_load(v);
+  glmm_128 trun0 = glmm_trunc(x);
+  glmm_128 sel0 = glmm_select(trun0, fmax, glmm_eq(x, pinf)); /* +Inf -> MAX */
+  glmm_128 sel1 = glmm_select(sel0, fmin, glmm_eq(x, ninf)); /* -Inf -> MIN */
+  glmm_128 and0 = glmm_and(sel1, glmm_eq(x, x)); /* NaN */
+  glmm_store(dest, and0);
+#else
+  dest[0] = glm_ftofi(v[0]);
+  dest[1] = glm_ftofi(v[1]);
+  dest[2] = glm_ftofi(v[2]);
+  dest[3] = glm_ftofi(v[3]);
 #endif
 }
 
